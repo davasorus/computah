@@ -282,6 +282,47 @@ func parseGoVet(out, root string) []string {
 	return diags
 }
 
+// toolRunTests runs the Go test suite (optionally scoped to a package path)
+// and returns DISTILLED failures — the failing test names plus each
+// assertion's file:line and message — the same actionable summary the verify
+// loop feeds back after a file-modifying turn, but callable ON DEMAND so the
+// model can check its work proactively instead of waiting for verify. On a
+// clean run it says so; on failure it leads with the parsed failures and
+// appends a raw tail for context.
+func toolRunTests(s *agent.Sandbox, a agent.ToolArgs) string {
+	pattern := testPattern(a.Str("path"))
+	cmd := "go test " + pattern
+	out, code, err := agent.ExecShell(cmd, s.Root, false)
+	if err != nil {
+		return "ERROR running tests: " + err.Error() + "\n" + agent.Tail(out, 2048)
+	}
+	if code == 0 {
+		return "OK: `" + cmd + "` passed — no test failures."
+	}
+	// Non-zero exit: distill the failures for the model.
+	feedback := fmt.Sprintf("`%s` failed (exit %d).", cmd, code)
+	if parsed := core.ParseTestFailures(out); parsed != "" {
+		feedback += "\n" + parsed + "\nFull output tail:\n" + agent.Tail(out, 2048)
+	} else {
+		feedback += " Output tail:\n" + agent.Tail(out, 4096)
+	}
+	return feedback
+}
+
+// testPattern normalizes a user/model-supplied path into a `go test` package
+// pattern: empty → the whole module (./...), a bare relative dir → rooted at
+// the workdir (./dir), an already-qualified pattern passes through.
+func testPattern(p string) string {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return "./..."
+	}
+	if strings.HasPrefix(p, "./") || strings.HasPrefix(p, "/") {
+		return p
+	}
+	return "./" + p
+}
+
 // findIdentOffset returns the byte offset of the first occurrence of ident
 // that stands alone (not a substring of a longer identifier).
 func findIdentOffset(src, ident string) int {
@@ -351,6 +392,14 @@ func RegisterStructuredTools() {
 				"path": map[string]any{"type": "string", "description": "Optional file or directory to check (default: whole workdir)"},
 			},
 			Handler: toolGoDiagnostics,
+		},
+		agent.Tool{
+			Name: "run_tests",
+			Desc: "Run the Go test suite and get DISTILLED failures — the failing test names plus each assertion's file:line and message — instead of a wall of `go test` output. Use it to check your work proactively after edits. Optionally scope to a package path (e.g. \"internal/agent\"); defaults to the whole module (./...).",
+			Props: map[string]any{
+				"path": map[string]any{"type": "string", "description": "Optional package path to test (default: ./... — the whole module)"},
+			},
+			Handler: toolRunTests,
 		},
 	)
 	agent.MarkReadOnly("go_diagnostics")
