@@ -54,7 +54,9 @@ Two layers, both optional:
 - **CLI surface** (`url`, `model`) via Viper: a flag, a `COMPUTAH_URL` /
   `COMPUTAH_MODEL` env var, or `~/.agent/computah.yaml`.
 - **Agent behavior** (compaction, budgets, MCP servers, hooks, etc.) via the
-  agent's own `~/.agent/config.json`, unchanged.
+  agent's own `~/.agent/config.json`, unchanged. Set `price_in_per_m` /
+  `price_out_per_m` (USD per 1M tokens) to see an estimated session cost in
+  `/stats` when using a paid endpoint; local servers leave them unset.
 
 ## Layout
 

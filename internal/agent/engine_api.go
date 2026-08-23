@@ -14,6 +14,7 @@ type StatsSnapshot struct {
 	GenTk      int
 	ThinkTk    int
 	LastTTFBms int64
+	CostUSD    float64 // estimated session cost; 0 when pricing isn't configured
 }
 
 // Stats returns a locked snapshot of the current stats recorder.
@@ -26,6 +27,7 @@ func Stats() StatsSnapshot {
 		GenTk:      stats.genTk,
 		ThinkTk:    stats.thinkTk,
 		LastTTFBms: stats.lastTTFB.Milliseconds(),
+		CostUSD:    stats.sessionCostUSD(),
 	}
 }
 

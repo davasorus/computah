@@ -39,6 +39,27 @@ type statsRecorder struct {
 
 var stats statsRecorder
 
+// priceInPerM / priceOutPerM are USD per 1,000,000 tokens for input (prompt)
+// and output (generated + reasoning), set from config at startup. Both zero
+// for local/free servers, which suppresses the cost line entirely — so the
+// default local experience is unchanged. Output pricing covers reasoning
+// tokens too, since providers bill those at the output rate.
+var (
+	priceInPerM  float64
+	priceOutPerM float64
+)
+
+// pricingEnabled reports whether a cost estimate can be shown.
+func pricingEnabled() bool { return priceInPerM > 0 || priceOutPerM > 0 }
+
+// sessionCostUSD estimates the cumulative session cost from token counts and
+// the configured per-million rates. Reasoning tokens bill at the output rate.
+func (s *statsRecorder) sessionCostUSD() float64 {
+	in := float64(s.promptTk) / 1e6 * priceInPerM
+	out := float64(s.genTk+s.thinkTk) / 1e6 * priceOutPerM
+	return in + out
+}
+
 // record is called once per completed chat request from the SSE layer.
 func (s *statsRecorder) record(promptTok, genTok, thinkTok int, ttfb, total time.Duration) {
 	s.mu.Lock()
@@ -79,6 +100,10 @@ func (s *statsRecorder) render() string {
 	fmt.Fprintf(&b, "last request: ~%dk sent · %d thought · %d generated · TTFB %s\n",
 		s.lastPrompt/1000, s.lastThink, s.lastGen,
 		s.lastTTFB.Round(100*time.Millisecond))
+	if pricingEnabled() {
+		fmt.Fprintf(&b, "estimated cost: $%.4f this session (in $%.2f/M · out $%.2f/M; reasoning billed as output)\n",
+			s.sessionCostUSD(), priceInPerM, priceOutPerM)
+	}
 	b.WriteString("(tokens are chars/4 estimates; TTFB ≈ prompt processing; \"thought\" = reasoning tokens the model burned before answering — the main cost of a reasoning model)\n")
 	return b.String()
 }

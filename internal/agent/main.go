@@ -267,6 +267,8 @@ type Config struct {
 	BudgetKTokens     int                        `json:"budget_ktokens,omitempty"`        // warn when generated+reasoning tokens exceed this many thousand (0 = off)
 	VerifyCommand     string                     `json:"verify_command,omitempty"`        // e.g. "go build ./... && go test ./..."
 	AuxModel          string                     `json:"aux_model,omitempty"`             // smaller model for compaction/titles/commit messages
+	PriceInPerM       float64                    `json:"price_in_per_m,omitempty"`        // USD per 1M input (prompt) tokens — enables session cost in /stats (0 = off, e.g. local)
+	PriceOutPerM      float64                    `json:"price_out_per_m,omitempty"`       // USD per 1M output (generated+reasoning) tokens
 	VaultPath         string                     `json:"vault_path,omitempty"`            // Obsidian vault root — enables vault_search/read/note
 	EmbedModel        string                     `json:"embed_model,omitempty"`           // embedding model id — enables semantic vault search
 	ReasoningEffort   string                     `json:"reasoning_effort,omitempty"`      // low|medium|high — thinking budget for normal turns
@@ -458,11 +460,12 @@ func Run(opts Options) int {
 	if wd, err := os.Getwd(); err == nil {
 		agentSourceDir = wd // where /reload rebuilds from
 	}
-	sessionStart = time.Now()           // session budget clock
-	completerRoot, curRoot = root, root // completion and hooks resolve against the workdir
-	loadCustomCommands(root)            // /<name> templates from .agent/commands/
-	loadAgentRoles(root)                // spawn_task roles from .agent/agents/
-	auxModel = cfg.AuxModel             // housekeeping model (compact/titles/commits)
+	sessionStart = time.Now()                                     // session budget clock
+	completerRoot, curRoot = root, root                           // completion and hooks resolve against the workdir
+	loadCustomCommands(root)                                      // /<name> templates from .agent/commands/
+	loadAgentRoles(root)                                          // spawn_task roles from .agent/agents/
+	auxModel = cfg.AuxModel                                       // housekeeping model (compact/titles/commits)
+	priceInPerM, priceOutPerM = cfg.PriceInPerM, cfg.PriceOutPerM // cost estimation in /stats (0 = local/free, no cost shown)
 	core.VaultPath = cfg.VaultPath
 	core.EmbedModel = cfg.EmbedModel
 	runToolRegistrations() // decision/structured/embed tools, wired via cmd
