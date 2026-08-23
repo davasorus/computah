@@ -512,6 +512,7 @@ func Run(opts Options) int {
 	}
 
 	st := newSessionStore(root)
+	SetActiveSessionStore(st) // let the web dashboard browse sessions
 	if *resumeFlag != "" {
 		var path string
 		var err error

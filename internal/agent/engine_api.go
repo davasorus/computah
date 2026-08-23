@@ -1,6 +1,11 @@
 package agent
 
-import "net/http"
+import (
+	"fmt"
+	"net/http"
+	"path/filepath"
+	"strings"
+)
 
 // engine_api.go is the exported surface the presentation packages (tui, web)
 // use. It deliberately exposes SNAPSHOTS and methods, never the engine's
@@ -187,3 +192,81 @@ func SetHooks(h map[string]string) { hooks = h }
 
 // Hooks returns the current lifecycle hooks map (used by tests to save/restore).
 func Hooks() map[string]string { return hooks }
+
+// activeSessionStore holds the session store for the running agent so
+// presentation surfaces (the web dashboard) can browse sessions without the
+// store being threaded through their constructors. Set once in main, read-only
+// thereafter — consistent with curModel and friends.
+var activeSessionStore *SessionStore
+
+// SetActiveSessionStore records the running agent's session store. Called once
+// at startup.
+func SetActiveSessionStore(st *SessionStore) { activeSessionStore = st }
+
+// ActiveSessionStore returns the running agent's session store, or nil if none
+// is set (e.g. persistence unavailable).
+func ActiveSessionStore() *SessionStore { return activeSessionStore }
+
+// SessionSummary is a structured, exported view of one persisted session for
+// surfaces outside the agent package (the web dashboard). It mirrors what the
+// CLI's `/sessions` list shows, but as data instead of printed text.
+type SessionSummary struct {
+	Name     string `json:"name"`     // session file name without .jsonl
+	Title    string `json:"title"`    // model-written title, or a prompt excerpt
+	Messages int    `json:"messages"` // message count
+	Latest   bool   `json:"latest"`   // true for the newest session
+}
+
+// SessionSummaries returns the persisted sessions for this store's directory,
+// newest first — the data behind the dashboard's session browser. Returns nil
+// when persistence is unavailable or there are no sessions.
+func (st *SessionStore) SessionSummaries() []SessionSummary {
+	if st.dir == "" {
+		return nil
+	}
+	names := st.sessionNames()
+	out := make([]SessionSummary, 0, len(names))
+	for i, name := range names {
+		full := filepath.Join(st.dir, name)
+		msgs, _ := loadSession(full, 1<<30)
+		label := ""
+		for _, m := range msgs {
+			if m.Role == "user" && !strings.HasPrefix(m.Content, "[") {
+				label = m.Content
+				if len(label) > 80 {
+					label = label[:80] + "..."
+				}
+				break
+			}
+		}
+		if t := sessionTitle(full); t != "" {
+			label = t // model-written title beats a raw prompt excerpt
+		}
+		if label == "" {
+			label = "(empty)"
+		}
+		out = append(out, SessionSummary{
+			Name:     strings.TrimSuffix(name, ".jsonl"),
+			Title:    label,
+			Messages: len(msgs),
+			Latest:   i == 0,
+		})
+	}
+	return out
+}
+
+// SessionTranscript returns the messages of a named session (without the
+// .jsonl suffix) for display in the dashboard. The name is validated to be a
+// bare session name — no path separators — so it can't escape the store dir.
+func (st *SessionStore) SessionTranscript(name string) ([]Message, error) {
+	if st.dir == "" {
+		return nil, fmt.Errorf("session persistence unavailable")
+	}
+	if strings.ContainsAny(name, `/\`) || strings.Contains(name, "..") {
+		return nil, fmt.Errorf("invalid session name")
+	}
+	if !strings.HasSuffix(name, ".jsonl") {
+		name += ".jsonl"
+	}
+	return loadSession(filepath.Join(st.dir, name), 1<<30)
+}

@@ -128,6 +128,14 @@ const dashHTML = `<!doctype html>
   #todos .box { color: var(--dim); flex: 0 0 auto; }
   #todos li.done .box { color: var(--green); }
   #todos li.done .txt { color: var(--dim); text-decoration: line-through; }
+  #sessions { list-style: none; margin: 0; padding: 0; }
+  #sessions li { padding: 5px 0; border-bottom: 1px solid var(--line); cursor: pointer; }
+  #sessions li:hover .stitle { color: var(--cyan); }
+  #sessions li.empty { color: var(--dim); cursor: default; border: none; }
+  #sessions .stitle { display: block; font-size: 12px; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #sessions .smeta { display: block; font-size: 10px; color: var(--dim); }
+  #sessions li.latest .stitle::after { content: " ● latest"; color: var(--green); font-size: 10px; }
+  #sessions .viewing { color: var(--cyan); }
   .empty { color: var(--dim); font-style: italic; }
   ::-webkit-scrollbar { width: 10px; height: 10px; }
   ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; }
@@ -153,6 +161,8 @@ const dashHTML = `<!doctype html>
     <aside>
       <h2>todos</h2>
       <ul id="todos"><li class="empty">none yet</li></ul>
+      <h2>sessions</h2>
+      <ul id="sessions"><li class="empty">loading…</li></ul>
     </aside>
   </main>
   <form id="composer" style="display:none">
@@ -433,6 +443,51 @@ const dashHTML = `<!doctype html>
   }
   refreshState();
   setInterval(refreshState, 2000);
+
+  // Session browser: list persisted sessions and load a transcript into the
+  // feed when one is clicked. Read-only — viewing history never drives the
+  // agent. A "live" pseudo-entry returns to the running transcript.
+  var viewingSession = null; // null = live feed
+  function refreshSessions() {
+    fetch('/api/sessions').then(function (r) { return r.json(); }).then(function (d) {
+      var ul = document.getElementById('sessions');
+      if (!d.available) { ul.innerHTML = '<li class="empty">persistence off</li>'; return; }
+      var list = d.sessions || [];
+      if (!list.length) { ul.innerHTML = '<li class="empty">none yet</li>'; return; }
+      var html = '<li class="' + (viewingSession === null ? 'viewing' : '') +
+        '" data-name="__live__"><span class="stitle">▶ live</span></li>';
+      html += list.map(function (s) {
+        return '<li class="' + (s.latest ? 'latest ' : '') +
+          (viewingSession === s.name ? 'viewing' : '') + '" data-name="' + escapeHtml(s.name) + '">' +
+          '<span class="stitle">' + escapeHtml(s.title) + '</span>' +
+          '<span class="smeta">' + escapeHtml(s.name) + ' · ' + s.messages + ' msgs</span></li>';
+      }).join('');
+      ul.innerHTML = html;
+      Array.prototype.forEach.call(ul.querySelectorAll('li[data-name]'), function (li) {
+        li.onclick = function () { openSession(li.getAttribute('data-name')); };
+      });
+    }).catch(function () {});
+  }
+  function openSession(name) {
+    if (name === '__live__') { viewingSession = null; location.reload(); return; }
+    viewingSession = name;
+    fetch('/api/session?name=' + encodeURIComponent(name)).then(function (r) { return r.json(); }).then(function (d) {
+      var feed = document.getElementById('feed');
+      feed.innerHTML = '<div class="ev status"><span class="b"><span class="glyph">•</span> viewing session ' +
+        escapeHtml(name) + ' (read-only) — click ▶ live to return</span></div>';
+      (d.messages || []).forEach(function (m) {
+        var row = document.createElement('div');
+        row.className = 'ev ' + (m.role === 'user' ? 'user' : 'assistant');
+        var g = m.role === 'user' ? '❯' : '';
+        row.innerHTML = '<span class="b">' + (g ? '<span class="glyph">' + g + '</span> ' : '') +
+          renderMarkdown(m.content || '') + '</span>';
+        feed.appendChild(row);
+      });
+      refreshSessions(); // update the "viewing" highlight
+    }).catch(function () {});
+  }
+  refreshSessions();
+  setInterval(function () { if (viewingSession === null) refreshSessions(); }, 5000);
 
   // Two-way: composer submits prompts when the server allows writes.
   var composer = document.getElementById('composer');

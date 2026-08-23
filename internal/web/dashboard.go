@@ -100,6 +100,8 @@ func StartDashboard(addr string) {
 	mux.HandleFunc("/", dashIndexHandler)
 	mux.HandleFunc("/events", dashEventsHandler)
 	mux.HandleFunc("/api/state", dashStateHandler)
+	mux.HandleFunc("/api/sessions", dashSessionsHandler)
+	mux.HandleFunc("/api/session", dashSessionHandler)
 	mux.HandleFunc("/api/submit", dashSubmitHandler)
 	mux.HandleFunc("/api/approve", dashApproveHandler)
 
@@ -173,6 +175,53 @@ func dashStateHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]any{"stats": st, "todos": td, "can_submit": dashAllowWrite})
+}
+
+// dashSessionsHandler returns the list of persisted sessions for the running
+// agent's working directory (newest first) — the data for the session browser.
+func dashSessionsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	store := agent.ActiveSessionStore()
+	if store == nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{"sessions": []any{}, "available": false})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"sessions":  store.SessionSummaries(),
+		"available": true,
+	})
+}
+
+// dashSessionHandler returns the transcript of one session (by ?name=) as a
+// list of {role, content} messages for display in the browser.
+func dashSessionHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	name := r.URL.Query().Get("name")
+	if name == "" {
+		http.Error(w, `{"error":"name required"}`, http.StatusBadRequest)
+		return
+	}
+	store := agent.ActiveSessionStore()
+	if store == nil {
+		http.Error(w, `{"error":"session persistence unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
+	msgs, err := store.SessionTranscript(name)
+	if err != nil {
+		http.Error(w, `{"error":`+jsonString(err.Error())+`}`, http.StatusBadRequest)
+		return
+	}
+	out := make([]map[string]string, 0, len(msgs))
+	for _, m := range msgs {
+		out = append(out, map[string]string{"role": m.Role, "content": m.Content})
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"name": name, "messages": out})
+}
+
+// jsonString safely encodes s as a JSON string literal (with quotes).
+func jsonString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }
 
 // dashSubmitHandler accepts a browser-submitted prompt (POST /api/submit,
