@@ -63,3 +63,7 @@ const (
 )
 
 var termWidth = core.TermWidth
+
+// --- core data types (moved to core) ---
+type Message = core.Message
+type ToolCall = core.ToolCall

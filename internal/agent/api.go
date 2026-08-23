@@ -14,22 +14,6 @@ import (
 
 // ---------- OpenAI-compatible API types ----------
 
-type Message struct {
-	Role       string     `json:"role"` // system | user | assistant | tool
-	Content    string     `json:"content"`
-	ToolCalls  []ToolCall `json:"tool_calls,omitempty"`
-	ToolCallID string     `json:"tool_call_id,omitempty"` // set on role=tool replies
-}
-
-type ToolCall struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	Function struct {
-		Name      string `json:"name"`
-		Arguments string `json:"arguments"` // JSON *string*, unlike Ollama's parsed map
-	} `json:"function"`
-}
-
 type ChatRequest struct {
 	Model           string           `json:"model"`
 	Messages        []Message        `json:"messages"`
