@@ -7,7 +7,6 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -58,19 +57,6 @@ func useTTY() bool { return forceTTY || stdinTTY }
 // fail even when the session is a real terminal. A too-large value causes
 // tables and wrapped text to overflow and cascade, so the fallback is
 // deliberately conservative.
-func termWidth() int {
-	for _, fd := range []int{int(os.Stdout.Fd()), int(os.Stderr.Fd()), int(os.Stdin.Fd())} {
-		if w, _, err := term.GetSize(fd); err == nil && w > 0 {
-			return w
-		}
-	}
-	if c := os.Getenv("COLUMNS"); c != "" {
-		if w, err := strconv.Atoi(strings.TrimSpace(c)); err == nil && w > 0 {
-			return w
-		}
-	}
-	return 80 // conservative default — better to under-fill than overflow
-}
 
 // initInput starts whichever input path this process needs.
 func initInput() {

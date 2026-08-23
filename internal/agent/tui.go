@@ -20,6 +20,8 @@ package agent
 
 import (
 	"fmt"
+	"github.com/davasorus/computah/internal/core"
+	"github.com/davasorus/computah/internal/md"
 	"os"
 	"strconv"
 	"strings"
@@ -322,7 +324,7 @@ func (m *tuiModel) reflow() {
 			// Tables are already constrained to width by renderMarkdownBlock;
 			// other assistant text needs soft word-wrapping (the bubbletea
 			// viewport clips rather than wraps long lines).
-			block = renderMarkdownBlock(body, useColor, w)
+			block = md.RenderMarkdownBlock(body, core.UseColor, w)
 		} else if body, ok := strings.CutPrefix(l, "\x00raw"); ok {
 			// Pre-formatted (diff) — verbatim, no wrap, no markdown.
 			b.WriteString(body)
@@ -354,7 +356,7 @@ func wrapLine(line string, w int) string {
 	if strings.ContainsAny(line, "│┌┐└┘├┤┬┴┼─") {
 		return line
 	}
-	return wrapANSI(line, w) // shared wrapper (indent-preserving, ANSI-aware)
+	return md.WrapANSI(line, w) // shared wrapper (indent-preserving, ANSI-aware)
 }
 
 func (m tuiModel) View() string {

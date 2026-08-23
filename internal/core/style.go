@@ -1,6 +1,12 @@
 package core
 
-import "os"
+import (
+	"os"
+	"strconv"
+	"strings"
+
+	"golang.org/x/term"
+)
 
 // UseColor reports whether ANSI styling should be emitted: only when stdout is
 // a real terminal and NO_COLOR is unset. Computed once at startup.
@@ -29,3 +35,19 @@ const (
 	ColorYellow = "33"
 	ColorCyan   = "36"
 )
+
+// TermWidth returns the terminal's column width, trying stdout/stderr/stdin,
+// then $COLUMNS, then a conservative default of 80.
+func TermWidth() int {
+	for _, fd := range []int{int(os.Stdout.Fd()), int(os.Stderr.Fd()), int(os.Stdin.Fd())} {
+		if w, _, err := term.GetSize(fd); err == nil && w > 0 {
+			return w
+		}
+	}
+	if c := os.Getenv("COLUMNS"); c != "" {
+		if w, err := strconv.Atoi(strings.TrimSpace(c)); err == nil && w > 0 {
+			return w
+		}
+	}
+	return 80 // conservative default — better to under-fill than overflow
+}

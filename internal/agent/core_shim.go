@@ -61,3 +61,5 @@ const (
 	cYellow = core.ColorYellow
 	cCyan   = core.ColorCyan
 )
+
+var termWidth = core.TermWidth

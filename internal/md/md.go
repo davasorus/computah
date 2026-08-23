@@ -13,14 +13,15 @@
 //
 // When stdout isn't a terminal (NO_COLOR, pipes), tokens pass through
 // untouched — byte-exact markdown for scripts.
-package agent
+package md
 
 import (
 	"fmt"
+	"github.com/davasorus/computah/internal/core"
 	"strings"
 )
 
-type mdWriter struct {
+type Writer struct {
 	buf      strings.Builder
 	inFence  bool
 	pending  string   // a held-back line awaiting lookahead (table detection)
@@ -28,12 +29,12 @@ type mdWriter struct {
 	inTable  bool
 }
 
-func newMDWriter() *mdWriter { return &mdWriter{} }
+func NewMDWriter() *Writer { return &Writer{} }
 
 // Write consumes a streamed token, printing every completed line. Both color
 // and no-color modes route completed lines through handleLine so tables are
 // detected and rendered (box-drawing with color, aligned plain without).
-func (m *mdWriter) Write(tok string) {
+func (m *Writer) Write(tok string) {
 	m.buf.WriteString(tok)
 	for {
 		s := m.buf.String()
@@ -53,7 +54,7 @@ func (m *mdWriter) Write(tok string) {
 // while everything else streams immediately. The `pending` field holds a
 // candidate table-header line until the next line reveals whether it's a
 // table (separator follows) or ordinary text.
-func (m *mdWriter) handleLine(line string) {
+func (m *Writer) handleLine(line string) {
 	// Inside a fence, tables don't apply — stream directly.
 	if m.inFence || strings.HasPrefix(strings.TrimSpace(line), "```") {
 		m.flushPending()
@@ -96,17 +97,17 @@ func (m *mdWriter) handleLine(line string) {
 // list items don't overflow (the terminal would otherwise hard-wrap mid-word
 // or scroll horizontally). The bus gets the RAW line (the dashboard/TUI wrap
 // themselves). No-color mode stays byte-exact for pipes.
-func (m *mdWriter) emitLine(line string) {
-	if useColor {
-		fmt.Println(wrapANSI(m.renderLine(line), termWidth()))
+func (m *Writer) emitLine(line string) {
+	if core.UseColor {
+		fmt.Println(WrapANSI(m.renderLine(line), core.TermWidth()))
 	} else {
 		fmt.Println(line) // byte-exact markdown for pipes/NO_COLOR
 	}
-	emitAssistant(line)
+	core.EmitAssistant(line)
 }
 
 // flushPending emits any held candidate line as ordinary text.
-func (m *mdWriter) flushPending() {
+func (m *Writer) flushPending() {
 	if m.pending != "" {
 		m.emitLine(m.pending)
 		m.pending = ""
@@ -114,7 +115,7 @@ func (m *mdWriter) flushPending() {
 }
 
 // flushTable parses the buffered table lines and emits a rendered table.
-func (m *mdWriter) flushTable() {
+func (m *Writer) flushTable() {
 	if len(m.tableBuf) < 2 {
 		for _, l := range m.tableBuf {
 			m.emitLine(l)
@@ -124,22 +125,22 @@ func (m *mdWriter) flushTable() {
 	}
 	t, _ := parseTable(m.tableBuf, 0)
 	var rendered string
-	if useColor {
-		rendered = renderTableANSI(t, renderInline, stripMarkdown, termWidth())
+	if core.UseColor {
+		rendered = renderTableANSI(t, RenderInline, StripMarkdown, core.TermWidth())
 	} else {
-		rendered = renderTablePlain(t, stripMarkdown, termWidth())
+		rendered = renderTablePlain(t, StripMarkdown, core.TermWidth())
 	}
 	fmt.Println(rendered)
 	// The dashboard gets the RAW markdown lines (it renders its own HTML).
 	for _, l := range m.tableBuf {
-		emitAssistant(l)
+		core.EmitAssistant(l)
 	}
 	m.tableBuf, m.inTable = nil, false
 }
 
 // Flush drains any held state at end of turn: an in-progress table, a
 // pending candidate line, and any partial (newline-less) buffered text.
-func (m *mdWriter) Flush() {
+func (m *Writer) Flush() {
 	// Complete any buffered whole line first (rare: stream ended mid-line).
 	if s := m.buf.String(); s != "" {
 		// Treat a trailing partial line as a completed line for rendering.
@@ -153,7 +154,7 @@ func (m *mdWriter) Flush() {
 	m.inFence = false
 }
 
-func (m *mdWriter) renderLine(line string) string {
+func (m *Writer) renderLine(line string) string {
 	trimmed := strings.TrimSpace(line)
 	// Fence delimiters toggle state and render as a dim rule with the
 	// language tag, visually bracketing the block.
@@ -162,17 +163,17 @@ func (m *mdWriter) renderLine(line string) string {
 		m.inFence = !m.inFence
 		rule := "──────────"
 		if m.inFence && lang != "" {
-			return tint(cDim, "┌─ "+lang+" "+rule)
+			return core.Tint(core.ColorDim, "┌─ "+lang+" "+rule)
 		}
 		if m.inFence {
-			return tint(cDim, "┌─"+rule)
+			return core.Tint(core.ColorDim, "┌─"+rule)
 		}
-		return tint(cDim, "└─"+rule)
+		return core.Tint(core.ColorDim, "└─"+rule)
 	}
 	if m.inFence {
 		// Code: no inline styling (backticks/asterisks are CODE here),
 		// cyan body with a dim gutter.
-		return tint(cDim, "│ ") + tint(cCyan, line)
+		return core.Tint(core.ColorDim, "│ ") + core.Tint(core.ColorCyan, line)
 	}
 	// Headers: whole line bold, hashes dimmed away.
 	if strings.HasPrefix(trimmed, "#") {
@@ -182,27 +183,27 @@ func (m *mdWriter) renderLine(line string) string {
 	// Bullets: - / * become a proper bullet glyph (indent preserved).
 	if rest, ok := strings.CutPrefix(strings.TrimLeft(line, " "), "- "); ok {
 		indent := line[:len(line)-len(strings.TrimLeft(line, " "))]
-		return indent + tint(cDim, "•") + " " + renderInline(rest)
+		return indent + core.Tint(core.ColorDim, "•") + " " + RenderInline(rest)
 	}
 	if rest, ok := strings.CutPrefix(strings.TrimLeft(line, " "), "* "); ok {
 		indent := line[:len(line)-len(strings.TrimLeft(line, " "))]
-		return indent + tint(cDim, "•") + " " + renderInline(rest)
+		return indent + core.Tint(core.ColorDim, "•") + " " + RenderInline(rest)
 	}
-	return renderInline(line)
+	return RenderInline(line)
 }
 
-// renderInline styles `code`, **bold**, and *italic* spans. Inline code is
+// RenderInline styles `code`, **bold**, and *italic* spans. Inline code is
 // handled first by splitting on backticks so its content is protected from
 // bold/italic processing — asterisks inside `code` are code.
-// renderMarkdownBlock renders a COMPLETE markdown string (not streaming) to
+// RenderMarkdownBlock renders a COMPLETE markdown string (not streaming) to
 // ANSI (color) or aligned plain text. Used where the full text is already in
 // hand — the TUI viewport re-renders the whole assistant block each update,
 // and this keeps its tables/headings/emphasis identical to the CLI's
 // streaming renderer. Both go through the same mdtable + renderLine code.
-func renderMarkdownBlock(src string, color bool, maxWidth int) string {
+func RenderMarkdownBlock(src string, color bool, maxWidth int) string {
 	lines := strings.Split(src, "\n")
 	var out []string
-	w := &mdWriter{}
+	w := &Writer{}
 	i := 0
 	for i < len(lines) {
 		line := lines[i]
@@ -219,9 +220,9 @@ func renderMarkdownBlock(src string, color bool, maxWidth int) string {
 			i+1 < len(lines) && isTableSeparator(lines[i+1]) {
 			tbl, next := parseTable(lines, i)
 			if color {
-				out = append(out, renderTableANSI(tbl, renderInline, stripMarkdown, maxWidth))
+				out = append(out, renderTableANSI(tbl, RenderInline, StripMarkdown, maxWidth))
 			} else {
-				out = append(out, renderTablePlain(tbl, stripMarkdown, maxWidth))
+				out = append(out, renderTablePlain(tbl, StripMarkdown, maxWidth))
 			}
 			i = next
 			continue
@@ -236,9 +237,9 @@ func renderMarkdownBlock(src string, color bool, maxWidth int) string {
 	return strings.Join(out, "\n")
 }
 
-// stripMarkdown removes inline markdown markers so display width can be
+// StripMarkdown removes inline markdown markers so display width can be
 // measured accurately (a **bold** cell is 4 chars wider than it looks).
-func stripMarkdown(s string) string {
+func StripMarkdown(s string) string {
 	s = strings.ReplaceAll(s, "**", "")
 	s = strings.ReplaceAll(s, "~~", "")
 	s = strings.ReplaceAll(s, "`", "")
@@ -247,7 +248,7 @@ func stripMarkdown(s string) string {
 	return s
 }
 
-func renderInline(s string) string {
+func RenderInline(s string) string {
 	parts := strings.Split(s, "`")
 	if len(parts)%2 == 0 {
 		// Unbalanced backticks — don't guess, style only emphasis.

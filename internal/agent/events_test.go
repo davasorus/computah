@@ -2,6 +2,7 @@ package agent
 
 import (
 	"github.com/davasorus/computah/internal/core"
+	"github.com/davasorus/computah/internal/md"
 	"strings"
 	"sync"
 	"testing"
@@ -98,7 +99,7 @@ func TestMDWriterEmitsAssistantToBus(t *testing.T) {
 	saved := useColor
 	useColor = true
 	defer func() { useColor = saved }()
-	m := newMDWriter()
+	m := md.NewMDWriter()
 	m.Write("first line\nsecond ")
 	m.Write("line\n")
 	m.Flush()

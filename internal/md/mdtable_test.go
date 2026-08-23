@@ -1,6 +1,7 @@
-package agent
+package md
 
 import (
+	"github.com/davasorus/computah/internal/core"
 	"strings"
 	"testing"
 )
@@ -49,7 +50,7 @@ func TestRenderTablePlainAligned(t *testing.T) {
 		header: []string{"Goal", "Status"},
 		rows:   [][]string{{"Styling", "Partial"}, {"TUI", "Not Started"}},
 	}
-	out := renderTablePlain(tbl, stripMarkdown, 0)
+	out := renderTablePlain(tbl, StripMarkdown, 0)
 	lines := strings.Split(out, "\n")
 	// header + separator + 2 rows
 	if len(lines) != 4 {
@@ -62,11 +63,11 @@ func TestRenderTablePlainAligned(t *testing.T) {
 }
 
 func TestRenderTableANSIHasBorders(t *testing.T) {
-	saved := useColor
-	useColor = true
-	defer func() { useColor = saved }()
+	saved := core.UseColor
+	core.UseColor = true
+	defer func() { core.UseColor = saved }()
 	tbl := mdTable{header: []string{"A", "B"}, rows: [][]string{{"1", "2"}}}
-	out := renderTableANSI(tbl, renderInline, stripMarkdown, 0)
+	out := renderTableANSI(tbl, RenderInline, StripMarkdown, 0)
 	for _, want := range []string{"┌", "┐", "│", "├", "┤", "└", "┘"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("ANSI table missing border %q:\n%s", want, out)
@@ -78,21 +79,21 @@ func TestRenderTableANSIHasBorders(t *testing.T) {
 // streams it) and verifies the writer buffers and renders it as a table
 // rather than as raw pipe lines.
 func TestStreamingTableDetection(t *testing.T) {
-	saved := useColor
-	useColor = true
-	defer func() { useColor = saved }()
+	saved := core.UseColor
+	core.UseColor = true
+	defer func() { core.UseColor = saved }()
 
-	// Capture assistant bus events (the dashboard mirror) to confirm the raw
+	// Capture assistant core.Bus events (the dashboard mirror) to confirm the raw
 	// table lines are emitted for HTML rendering.
 	var asst []string
-	unsub := bus.Subscribe(SubscriberFunc(func(e Event) {
-		if e.Kind == EvAssistant {
+	unsub := core.Bus.Subscribe(core.SubscriberFunc(func(e core.Event) {
+		if e.Kind == core.EvAssistant {
 			asst = append(asst, e.Text)
 		}
 	}))
 	defer unsub()
 
-	m := newMDWriter()
+	m := NewMDWriter()
 	stream := "Here is a table:\n| Goal | Status |\n| :--- | :--- |\n| TUI | Done |\n\nAfter.\n"
 	// feed a few chars at a time to simulate streaming
 	for i := 0; i < len(stream); i += 3 {
@@ -103,22 +104,22 @@ func TestStreamingTableDetection(t *testing.T) {
 		m.Write(stream[i:end])
 	}
 	m.Flush()
-	// The raw table lines must have reached the bus for the dashboard.
+	// The raw table lines must have reached the core.Bus for the dashboard.
 	joined := strings.Join(asst, "\n")
 	if !strings.Contains(joined, "| Goal | Status |") {
-		t.Fatalf("raw table lines should reach the bus:\n%s", joined)
+		t.Fatalf("raw table lines should reach the core.Bus:\n%s", joined)
 	}
 }
 
 func TestRenderMarkdownBlockTable(t *testing.T) {
 	src := "### Heading\n\n| Goal | Status |\n| :--- | :--- |\n| TUI | Done |\n\ntext after"
 	// color mode → ANSI table with borders
-	out := renderMarkdownBlock(src, true, 0)
+	out := RenderMarkdownBlock(src, true, 0)
 	if !strings.Contains(out, "┌") || !strings.Contains(out, "Goal") {
 		t.Fatalf("block render (color) missing table border:\n%s", out)
 	}
 	// plain mode → aligned, no box chars
-	plain := renderMarkdownBlock(src, false, 0)
+	plain := RenderMarkdownBlock(src, false, 0)
 	if strings.Contains(plain, "┌") {
 		t.Fatalf("plain block must not have box chars:\n%s", plain)
 	}
@@ -128,16 +129,16 @@ func TestRenderMarkdownBlockTable(t *testing.T) {
 }
 
 func TestTableRespectsMaxWidth(t *testing.T) {
-	saved := useColor
-	useColor = true
-	defer func() { useColor = saved }()
+	saved := core.UseColor
+	core.UseColor = true
+	defer func() { core.UseColor = saved }()
 	tbl := mdTable{
 		header: []string{"Task", "Description"},
 		rows: [][]string{
 			{"Visual Styling", "Integrate lipgloss or color; highlight High Priority in red; struck-through text for Done items and a lot more text that would overflow a narrow terminal badly"},
 		},
 	}
-	out := renderTableANSI(tbl, renderInline, stripMarkdown, 60)
+	out := renderTableANSI(tbl, RenderInline, StripMarkdown, 60)
 	// Every rendered line must fit within the cap (allowing for the ANSI
 	// escape codes, which don't take visible width — so strip them first).
 	for _, line := range strings.Split(out, "\n") {
@@ -171,16 +172,16 @@ func stripANSI(s string) string {
 func TestWrapLinePreservesTableLines(t *testing.T) {
 	// Box-drawing lines must NOT be wrapped (they're pre-fit).
 	tableLine := "│ Task │ Description │"
-	if wrapLine(tableLine, 5) != tableLine {
+	if WrapANSI(tableLine, 5) != tableLine {
 		t.Fatal("table lines must pass through wrapLine unchanged")
 	}
 	// Short non-table lines pass through.
-	if wrapLine("hi", 80) != "hi" {
+	if WrapANSI("hi", 80) != "hi" {
 		t.Fatal("short line should be unchanged")
 	}
 	// Long non-table lines get wrapped (result spans multiple lines).
 	long := strings.Repeat("word ", 40)
-	wrapped := wrapLine(long, 20)
+	wrapped := WrapANSI(long, 20)
 	if !strings.Contains(wrapped, "\n") {
 		t.Fatal("long line should wrap to multiple lines")
 	}
@@ -201,7 +202,7 @@ func TestDisplayWidthANSI(t *testing.T) {
 
 func TestWrapANSIWrapsToWidth(t *testing.T) {
 	long := "the quick brown fox jumps over the lazy dog and keeps on running past the edge"
-	out := wrapANSI(long, 20)
+	out := WrapANSI(long, 20)
 	for _, ln := range strings.Split(out, "\n") {
 		if visibleLen(ln) > 20 {
 			t.Fatalf("wrapped line exceeds 20: %q (%d)", ln, visibleLen(ln))
@@ -215,7 +216,7 @@ func TestWrapANSIWrapsToWidth(t *testing.T) {
 func TestWrapANSIPreservesColorCodes(t *testing.T) {
 	// A colored long line: the ANSI codes must survive and not count toward width.
 	colored := "\033[36m" + strings.Repeat("word ", 20) + "\033[0m"
-	out := wrapANSI(colored, 20)
+	out := WrapANSI(colored, 20)
 	for _, ln := range strings.Split(out, "\n") {
 		if visibleLen(ln) > 20 {
 			t.Fatalf("colored wrapped line exceeds 20 visible: %q (%d)", ln, visibleLen(ln))
@@ -225,15 +226,15 @@ func TestWrapANSIPreservesColorCodes(t *testing.T) {
 
 func TestWrapANSILeavesTableLines(t *testing.T) {
 	tl := "│ a │ b │"
-	if wrapANSI(tl, 3) != tl {
-		t.Fatal("table lines must not be wrapped by wrapANSI")
+	if WrapANSI(tl, 3) != tl {
+		t.Fatal("table lines must not be wrapped by WrapANSI")
 	}
 }
 
 func TestWrapANSIPreservesIndent(t *testing.T) {
 	// A wrapped list item keeps its leading indent on continuation lines.
 	line := "    1. this is a fairly long list item that will need to wrap onto another line for sure"
-	out := wrapANSI(line, 30)
+	out := WrapANSI(line, 30)
 	lines := strings.Split(out, "\n")
 	if len(lines) < 2 {
 		t.Fatal("should have wrapped")

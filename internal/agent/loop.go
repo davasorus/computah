@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/davasorus/computah/internal/md"
 	"math/rand"
 	"os"
 	"sort"
@@ -86,7 +87,7 @@ func streamChat(baseURL, model string, messages []Message) (Message, bool, error
 	var err error
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		streamed := false
-		md := newMDWriter() // markdown → ANSI, line-buffered (see md.go)
+		mdw := md.NewMDWriter() // markdown → ANSI, line-buffered (see md.go)
 		sp := startSpinner(thinkingLabels[rand.Intn(len(thinkingLabels))])
 		// Surface tool-call generation on the spinner: without this, a long
 		// (or runaway) call is silent — no tokens print, nothing moves.
@@ -100,11 +101,11 @@ func streamChat(baseURL, model string, messages []Message) (Message, bool, error
 		reply, intr, err = interruptibleChat(baseURL, model, messages, func(tok string) {
 			streamed = true
 			sp.Stop()
-			md.Write(tok)
+			mdw.Write(tok)
 		})
 		onToolProgress, onReasoning = nil, nil
 		sp.Stop()
-		md.Flush()
+		mdw.Flush()
 		// Retry only when: it failed, wasn't a user interrupt, and nothing
 		// was printed yet (retrying after partial output would duplicate it).
 		if err != nil && !intr && !streamed && attempt < maxAttempts {

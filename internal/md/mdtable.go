@@ -7,9 +7,10 @@
 // renders its own HTML from the same markdown, but the DETECTION logic here
 // (isTableHeader/isTableSeparator) is the shared contract so all three
 // surfaces agree on what counts as a table.
-package agent
+package md
 
 import (
+	"github.com/davasorus/computah/internal/core"
 	"strings"
 )
 
@@ -104,13 +105,13 @@ func displayWidth(s string) int {
 	return len([]rune(s))
 }
 
-// wrapANSI word-wraps s to a maximum visible width, treating ANSI escape
+// WrapANSI word-wraps s to a maximum visible width, treating ANSI escape
 // sequences as zero-width so colored text wraps at the right column. Wrapping
 // happens at spaces where possible; an over-long single word is hard-broken.
 // Box-drawing (table) lines are returned unchanged — they're pre-fit. Leading
 // indentation is preserved on continuation lines so wrapped list items and
 // prose stay visually aligned.
-func wrapANSI(s string, max int) string {
+func WrapANSI(s string, max int) string {
 	if max <= 0 {
 		return s
 	}
@@ -263,7 +264,7 @@ func renderTableANSI(t mdTable, inlineFn, stripFn func(string) string, maxWidth 
 	}
 	pad := func(cells []string, header bool) string {
 		var b strings.Builder
-		b.WriteString(tint(cDim, "│"))
+		b.WriteString(core.Tint(core.ColorDim, "│"))
 		for c := 0; c < n; c++ {
 			var raw string
 			if c < len(cells) {
@@ -278,7 +279,7 @@ func renderTableANSI(t mdTable, inlineFn, stripFn func(string) string, maxWidth 
 				gap = 0
 			}
 			b.WriteString(" " + styled + strings.Repeat(" ", gap) + " ")
-			b.WriteString(tint(cDim, "│"))
+			b.WriteString(core.Tint(core.ColorDim, "│"))
 		}
 		return b.String()
 	}
@@ -292,7 +293,7 @@ func renderTableANSI(t mdTable, inlineFn, stripFn func(string) string, maxWidth 
 			}
 		}
 		b.WriteString(right)
-		return tint(cDim, b.String())
+		return core.Tint(core.ColorDim, b.String())
 	}
 	var b strings.Builder
 	b.WriteString(rule("┌", "┬", "┐") + "\n")
