@@ -119,7 +119,13 @@ func buildToolSchemas() {
 // a properties object and a required array. Returns a shallow copy so the
 // source schema is untouched.
 func sanitizeSchema(s map[string]any) map[string]any {
-	out := make(map[string]any, len(s)+2)
+	// len(s)+2 can only overflow with an absurdly large map; guard defensively
+	// so the make() size is always sane.
+	hint := len(s) + 2
+	if hint < 0 {
+		hint = 0
+	}
+	out := make(map[string]any, hint)
 	for k, v := range s {
 		out[k] = v
 	}
@@ -352,8 +358,10 @@ func autoApproved(cmd string) bool {
 	if builtinAutoApproved(cmd) {
 		return true
 	}
-	// Structural disqualifiers apply to user prefixes too.
-	if strings.ContainsAny(cmd, ";|`<>\n") || strings.Contains(cmd, "$(") || strings.Contains(cmd, "&") {
+	// Structural disqualifiers apply to user prefixes too: shell expansion
+	// ($IFS/${}/$()), subshells, chaining, redirection, and backgrounding all
+	// disqualify a command from riding the allowlist silently.
+	if strings.ContainsAny(cmd, ";|`<>\n$(&") {
 		return false
 	}
 	for _, p := range userAllowPrefixes() {
@@ -366,8 +374,14 @@ func autoApproved(cmd string) bool {
 
 // builtinAutoApproved is the read-only ruleset only — no user allowlist.
 func builtinAutoApproved(cmd string) bool {
-	// Absolute disqualifiers: substitution and redirection are never safe.
-	if strings.ContainsAny(cmd, ";|`<>\n") || strings.Contains(cmd, "$(") {
+	// Absolute disqualifiers: substitution, expansion, and redirection are
+	// never safe to auto-approve. A genuinely read-only command needs none of
+	// these — if present, fall through to the y/N prompt so a human sees it.
+	// "$" catches all shell expansion ($IFS, $9, ${var}, $(...)), the classic
+	// space/content-substitution bypasses; "(" catches subshells and process
+	// substitution. Presence means "prompt", not "block" — the command can
+	// still run, it just won't run silently.
+	if strings.ContainsAny(cmd, ";|`<>\n$(") {
 		return false
 	}
 	// A && chain is approved only if EVERY segment is approved on its own —
@@ -835,6 +849,13 @@ func closestLines(content, needle string) string {
 // lcsLen returns the length of the longest common substring of a and b.
 func lcsLen(a, b string) int {
 	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	// Guard against pathological inputs: lcsLen is O(len(a)*len(b)) and only
+	// used for "closest lines" edit diagnostics, so cap it well below any size
+	// where len(b)+1 could overflow or the quadratic cost would matter.
+	const maxLCSInput = 1 << 20 // 1 MiB per side
+	if len(a) > maxLCSInput || len(b) > maxLCSInput {
 		return 0
 	}
 	prev := make([]int, len(b)+1)
