@@ -4,14 +4,12 @@
 /agent
 *.exe
 
+# GoReleaser build output
+/dist
+
 # editor / OS
 /.vscode/
 .DS_Store
 
-# local agent state that may live in-repo during dev
+# local logs
 *.log
-
-.git
-compose/.env
-*.md
-/dist
