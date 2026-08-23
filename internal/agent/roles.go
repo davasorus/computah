@@ -47,16 +47,63 @@ func auxModelFor() string {
 	return curModel
 }
 
-// modelForTurn returns the model a normal agent turn should use. In plan mode
-// it prefers planModel (a stronger model for the reasoning-heavy planning
-// step), falling back to the main model when unset — mirroring how
-// currentReasoningEffort() prefers planReasoningEffort in plan mode. Execution
-// turns (plan mode off) always use curModel.
-func modelForTurn() string {
-	if planMode && planModel != "" {
-		return planModel
+// modelForTurn returns the model a turn should use. Precedence:
+//  1. Plan mode → planModel (planning is reasoning-heavy; never "trivial").
+//  2. A trivial follow-up turn → fastModel (cheap/fast model for the common
+//     "yes" / "continue" / "now do X" turns that don't need the big model).
+//  3. Otherwise → the main model.
+//
+// Each tier falls back to curModel when its model isn't configured, so the
+// default (nothing set) is unchanged: every turn uses the main model.
+func modelForTurn(userInput string) string {
+	if planMode {
+		if planModel != "" {
+			return planModel
+		}
+		return curModel
+	}
+	if fastModel != "" && isTrivialTurn(userInput) {
+		return fastModel
 	}
 	return curModel
+}
+
+// isTrivialTurn is a deliberately CONSERVATIVE heuristic: it returns true only
+// for turns that are obviously simple follow-ups, so misrouting a hard turn to
+// a weak model is rare. It classifies by the SURFACE of the request (short,
+// or a known continuation phrase) rather than trying to understand it — which
+// would need an extra model call and defeat the point. When unsure, it returns
+// false and the main model handles the turn.
+func isTrivialTurn(input string) bool {
+	s := strings.ToLower(strings.TrimSpace(input))
+	if s == "" {
+		return false
+	}
+	// Multi-line or long inputs are never treated as trivial — a wall of text
+	// or a pasted spec is real work.
+	if strings.Contains(s, "\n") || len(s) > 80 {
+		return false
+	}
+	// Exact-match continuations: the classic cheap follow-ups.
+	switch s {
+	case "yes", "y", "yep", "yeah", "ok", "okay", "sure", "go", "go ahead",
+		"continue", "proceed", "do it", "next", "please continue", "keep going",
+		"no", "n", "stop", "thanks", "thank you":
+		return true
+	}
+	// Short imperative follow-ups that lean on the model's just-built context.
+	// Require BOTH a continuation lead-in AND brevity, so "commit that" routes
+	// fast but "refactor the auth layer to use interfaces" does not.
+	trivialLeads := []string{
+		"commit", "run the tests", "run tests", "push", "try again",
+		"fix that", "fix it", "undo that", "show me", "list ", "explain that",
+	}
+	for _, lead := range trivialLeads {
+		if strings.HasPrefix(s, lead) {
+			return true
+		}
+	}
+	return false
 }
 
 // loadAgentRoles scans personal then repo-local role dirs; repo wins.

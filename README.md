@@ -58,7 +58,10 @@ Two layers, both optional:
   `price_out_per_m` (USD per 1M tokens) to see an estimated session cost in
   `/stats` when using a paid endpoint; local servers leave them unset. Set
   `plan_model` to route `/plan` turns to a stronger model while normal
-  execution stays on the main (faster) model.
+  execution stays on the main (faster) model. Set `fast_model` to route
+  trivial follow-up turns (e.g. "continue", "commit that", "run the tests") to
+  a cheaper/faster model automatically; substantive turns stay on the main
+  model.
 
 ## Layout
 
