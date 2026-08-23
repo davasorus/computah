@@ -71,6 +71,27 @@ type tuiModel struct {
 	onCommand func(string) // handle a /command
 }
 
+// styleForRole maps a canonical core.Role to the TUI's lipgloss style, so the
+// TUI colors an event by the SAME semantic role the CLI and dashboard use.
+// The concrete colors are the TUI's own (lipgloss palette); the mapping key
+// is shared, so "dim" is dim everywhere and "error" is error everywhere.
+func styleForRole(r core.Role) lipgloss.Style {
+	switch r {
+	case core.RoleError:
+		return stErr
+	case core.RoleStatus:
+		return stStatus
+	case core.RoleUser:
+		return stUser
+	case core.RoleAccent:
+		return stTool
+	case core.RoleDim:
+		return stDim
+	default:
+		return lipgloss.NewStyle()
+	}
+}
+
 // styles
 var (
 	stUser   = lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Bold(true)
@@ -252,11 +273,11 @@ func (m *tuiModel) applyEvent(e core.Event) {
 			suffix = " [inline]"
 		}
 		st := core.StyleFor(core.EvToolCall)
-		m.appendLine(stTool.Render(st.Pad() + st.Glyph + " " + e.Tool + "(" + e.Text + ")" + suffix))
+		m.appendLine(styleForRole(st.Role).Render(st.Pad() + st.Glyph + " " + e.Tool + "(" + e.Text + ")" + suffix))
 	case core.EvToolDone:
 		if e.Text != "" {
 			st := core.StyleFor(core.EvToolDone)
-			m.appendLine(stDim.Render(st.Pad() + st.Glyph + " " + e.Text))
+			m.appendLine(styleForRole(st.Role).Render(st.Pad() + st.Glyph + " " + e.Text))
 		}
 	case core.EvError:
 		m.appendLine(stErr.Render(e.Text))

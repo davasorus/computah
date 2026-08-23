@@ -76,3 +76,26 @@ func StyleFor(k EventKind) EventStyle {
 	}
 	return EventStyle{Glyph: "", Role: RolePlain, Indent: 0}
 }
+
+// ANSIForRole maps a semantic Role to the terminal color the CLI renders it
+// in. This is the ANSI half of the palette; the TUI keeps a parallel lipgloss
+// map and the dashboard a parallel CSS class set, but all three key off the
+// SAME Role, so a tool trace is "dim" everywhere and an error is "error"
+// everywhere — color consistency by construction, not coincidence. RolePlain
+// and RoleStatus return "" (terminal default), matching the CLI's prior look.
+func ANSIForRole(r Role) string {
+	switch r {
+	case RoleDim:
+		return ColorDim
+	case RoleError:
+		return ColorRed
+	case RoleUser:
+		return ColorGreen
+	case RoleAccent:
+		return ColorCyan
+	case RoleStatus, RoleAssistant, RolePlain:
+		return ""
+	default:
+		return ""
+	}
+}

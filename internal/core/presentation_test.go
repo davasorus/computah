@@ -41,3 +41,31 @@ func TestKnownGlyphsStable(t *testing.T) {
 		}
 	}
 }
+
+func TestANSIForRole(t *testing.T) {
+	cases := map[Role]string{
+		RoleDim:    ColorDim,
+		RoleError:  ColorRed,
+		RoleUser:   ColorGreen,
+		RoleAccent: ColorCyan,
+		RolePlain:  "",
+		RoleStatus: "",
+	}
+	for role, want := range cases {
+		if got := ANSIForRole(role); got != want {
+			t.Errorf("ANSIForRole(%q) = %q, want %q", role, got, want)
+		}
+	}
+}
+
+func TestToolTracesAreDim(t *testing.T) {
+	if StyleFor(EvToolCall).Role != RoleDim {
+		t.Error("tool_call should be RoleDim for consistent de-emphasis across surfaces")
+	}
+	if StyleFor(EvToolDone).Role != RoleDim {
+		t.Error("tool_done should be RoleDim for consistent de-emphasis across surfaces")
+	}
+	if StyleFor(EvError).Role != RoleError {
+		t.Error("error should be RoleError across surfaces")
+	}
+}

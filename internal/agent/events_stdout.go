@@ -47,7 +47,7 @@ func (s *stdoutSubscriber) OnEvent(e Event) {
 			fmt.Println(tint(cDim, st.Pad()+st.Glyph+" "+e.Text))
 		}
 	case EvError:
-		fmt.Println(tint(cRed, e.Text))
+		fmt.Println(tint(core.ANSIForRole(core.RoleError), e.Text))
 	case EvStatus:
 		fmt.Println(e.Text)
 	case EvThinking:
@@ -55,7 +55,7 @@ func (s *stdoutSubscriber) OnEvent(e Event) {
 		// event exists for the TUI/dashboard. stdout stays quiet to avoid
 		// double-rendering against the spinner.
 	case EvStats:
-		fmt.Println(tint(cDim, e.Text))
+		fmt.Println(tint(core.ANSIForRole(core.RoleDim), e.Text))
 	case EvLine:
 		if e.Meta["raw"] == "1" {
 			fmt.Println(e.Text) // pre-formatted (diff) — print verbatim
