@@ -13,12 +13,16 @@
 //
 //	"mcp_servers": {
 //	  "pg":    {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-postgres", "postgres://..."]},
-//	  "vault": {"url": "http://172.22.208.1:27123/mcp/", "token": "...", "no_prefix": true, "prefer": true}
+//	  "vault": {"url": "http://172.22.208.1:27123/mcp/", "token": "...", "no_prefix": true, "prefer": true},
+//	  "sbx":   {"command": "sandbox", "args": ["mcp", "-image", "python:3-alpine"], "prefer": true,
+//	           "prefer_hint": "a locked-down, network-less sandbox. Run untrusted or unfamiliar code here (sbx_run_script / sbx_run_sandbox) before running it on the host."}
 //	}
 //
 // Two transports: "command" (stdio child process) or "url" (Streamable
 // HTTP). Tool names are prefixed with the server name (pg_query) unless
-// "no_prefix" is set. "prefer" surfaces the server in the system prompt.
+// "no_prefix" is set. "prefer" surfaces the server in the system prompt;
+// "prefer_hint" overrides the default notes-server wording for non-notes
+// servers (e.g. a sandbox).
 package agent
 
 import (
@@ -47,6 +51,10 @@ type MCPServerConfig struct {
 	Insecure bool              `json:"insecure,omitempty"`  // skip TLS verify (self-signed loopback certs)
 	NoPrefix bool              `json:"no_prefix,omitempty"` // register tools under their own names
 	Prefer   bool              `json:"prefer,omitempty"`    // steer the model to this server in the system prompt
+	// PreferHint overrides the default (notes-server) steering text used when
+	// Prefer is set, so a non-notes server (e.g. a code sandbox) can describe
+	// how the model should use it. Empty = the default knowledge/notes wording.
+	PreferHint string `json:"prefer_hint,omitempty"`
 }
 
 const (
@@ -57,6 +65,39 @@ const (
 // preferredMCP names servers the model should reach for first (config
 // "prefer"); surfaced in the system prompt.
 var preferredMCP []string
+
+// preferHints maps a preferred server name to custom steering text (config
+// "prefer_hint"); servers without a hint use the default notes-server wording.
+var preferHints map[string]string
+
+// preferSteering builds the system-prompt line(s) for preferred MCP servers.
+// Servers with a custom prefer_hint get that text verbatim; the rest are
+// grouped under the default knowledge/notes wording. Returns "" when no
+// servers are preferred, so callers can append unconditionally.
+func preferSteering() string {
+	if len(preferredMCP) == 0 {
+		return ""
+	}
+	var custom []string
+	var defaults []string
+	for _, name := range preferredMCP {
+		if h, ok := preferHints[name]; ok {
+			custom = append(custom, "\n\nThe \""+name+"\" server is connected: "+h)
+		} else {
+			defaults = append(defaults, name)
+		}
+	}
+	var s string
+	if len(defaults) > 0 {
+		s += "\n\nA knowledge/notes server is connected as \"" + strings.Join(defaults, ", ") +
+			"\": for anything involving the user's notes, knowledge base, decisions, or documentation — recording OR retrieving — " +
+			"prefer its tools over writing files. Search it before assuming something isn't recorded; record durable decisions there when finishing significant work."
+	}
+	for _, c := range custom {
+		s += c
+	}
+	return s
+}
 
 // builtinToolNames snapshots non-MCP tool names so no_prefix registration
 // can avoid clobbering a built-in.
@@ -176,6 +217,12 @@ func startMCPServer(name string, cfg MCPServerConfig) (*mcpServer, int, error) {
 
 	if cfg.Prefer {
 		preferredMCP = append(preferredMCP, name)
+		if strings.TrimSpace(cfg.PreferHint) != "" {
+			if preferHints == nil {
+				preferHints = map[string]string{}
+			}
+			preferHints[name] = strings.TrimSpace(cfg.PreferHint)
+		}
 	}
 
 	// Discover and register tools.

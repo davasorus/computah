@@ -44,6 +44,20 @@ calls `core.ConfinePath` to reject any path that escapes the working directory
 (absolute paths elsewhere, `..` traversal, sibling-prefix tricks). The `@file`
 attachment paths in the TUI and headless dashboard are confined the same way.
 
+### Running untrusted code
+
+`run_command` executes on the host (behind the approval gate and the
+`core.VetCommand` denylist), which is appropriate for a coding agent working in
+your own repo — but it is NOT a boundary for genuinely untrusted code. For that,
+connect [`podman-sandbox-runner`](https://github.com/davasorus/podman-sandbox-runner)
+as an MCP server (see the example in `internal/agent/mcp.go`). Its `run_sandbox`
+and `run_script` tools execute code in an ephemeral, network-less container with
+a read-only rootfs, dropped capabilities, a non-root user, and memory/CPU/time
+limits — a real isolation boundary. In one-shot mode (the default) each call
+gets a fresh container, so nothing persists between runs. Set `"prefer": true`
+with a `"prefer_hint"` so the model reaches for the sandbox on unfamiliar or
+untrusted code instead of running it on the host.
+
 ## Reporting a vulnerability
 
 This is a personal project. If you find a security issue that isn't covered by

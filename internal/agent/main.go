@@ -148,11 +148,7 @@ func buildSystemPrompt(root string) string {
 			"type(scope): description — types: feat, fix, docs, style, refactor, perf, test, build, ci, chore. "+
 			"Use imperative mood, keep the subject under 72 characters, add a body for non-trivial changes, "+
 			"and mark breaking changes with ! after the type/scope (e.g. feat(api)!: ...).", root)
-	if len(preferredMCP) > 0 {
-		s += "\n\nA knowledge/notes server is connected as \"" + strings.Join(preferredMCP, ", ") +
-			"\": for anything involving the user's notes, knowledge base, decisions, or documentation — recording OR retrieving — " +
-			"prefer its tools over writing files. Search it before assuming something isn't recorded; record durable decisions there when finishing significant work."
-	}
+	s += preferSteering()
 	s += "\n\nHarness facts (your runtime, not the project): every file you write or edit is backed up once per session " +
 		"(<file>.bak) and the user can /undo or /diff against it; a git checkpoint is taken before each of your turns and the user can /rewind; " +
 		"a verify command may run automatically after turns that modify files, feeding failures back to you; edit results include a diff — read it. " +
@@ -164,11 +160,7 @@ func buildSystemPrompt(root string) string {
 			"durable decisions and runbooks into the vault's agent/ folder. Consult it when the user references " +
 			"their notes or past decisions; offer to record significant conclusions."
 	}
-	if len(preferredMCP) > 0 {
-		s += "\n\nA knowledge/notes server is connected as \"" + strings.Join(preferredMCP, ", ") +
-			"\": for anything involving the user's notes, knowledge base, decisions, or documentation — recording OR retrieving — " +
-			"prefer its tools over writing files. Search it before assuming something isn't recorded; record durable decisions there when finishing significant work."
-	}
+	s += preferSteering()
 	s += "\n\nHarness facts (your runtime, not the project): every file you write or edit is backed up once per session " +
 		"(<file>.bak) and the user can /undo or /diff against it; a git checkpoint is taken before each of your turns and the user can /rewind; " +
 		"a verify command may run automatically after turns that modify files, feeding failures back to you; edit results include a diff — read it. " +
