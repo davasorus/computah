@@ -119,13 +119,16 @@ func buildToolSchemas() {
 // a properties object and a required array. Returns a shallow copy so the
 // source schema is untouched.
 func sanitizeSchema(s map[string]any) map[string]any {
-	// len(s)+2 can only overflow with an absurdly large map; guard defensively
-	// so the make() size is always sane.
-	hint := len(s) + 2
-	if hint < 0 {
-		hint = 0
+	// Bound the input size BEFORE computing the capacity hint, so the +2 can
+	// never overflow. A JSON schema map with more than this many keys is
+	// absurd; fall back to an unsized make rather than trust the arithmetic.
+	const maxSchemaKeys = 1 << 20
+	var out map[string]any
+	if n := len(s); n >= 0 && n <= maxSchemaKeys {
+		out = make(map[string]any, n+2)
+	} else {
+		out = make(map[string]any)
 	}
-	out := make(map[string]any, hint)
 	for k, v := range s {
 		out[k] = v
 	}
