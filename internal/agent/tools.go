@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -1143,6 +1144,39 @@ func (s *Sandbox) toolFetchURL(a toolArgs) string {
 // captured in full for the tool result. Returns combined output and the exit
 // code; exitCode is -1 for timeouts and other non-exit errors. (Setpgid is
 // Linux/WSL2-only, which is where this agent lives.)
+// ExecArgv runs a command as a direct argv vector — NO shell — so arguments
+// are passed verbatim and shell metacharacters (;, |, `, $(), &) in an
+// argument are inert. Use this (not ExecShell) for tools that invoke a FIXED
+// program with data arguments derived from model/user input (e.g. the git
+// tools): it eliminates command injection by construction. Returns combined
+// stdout+stderr, the exit code, and any error. The command timeout and the
+// VetCommand backstop still apply.
+func ExecArgv(dir string, name string, args ...string) (string, int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
+	defer cancel()
+	// VetCommand guards the reconstructed command line as defense-in-depth,
+	// consistent with ExecShell; argv exec already prevents metachar injection.
+	if err := core.VetCommand(name + " " + strings.Join(args, " ")); err != nil {
+		return "", -1, err
+	}
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Dir = dir
+	setProcessGroup(cmd)
+	cmd.WaitDelay = 5 * time.Second
+	out, err := cmd.CombinedOutput()
+	code := 0
+	if err != nil {
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			code = ee.ExitCode()
+			err = nil // a non-zero exit is not a Go error for our callers
+		} else {
+			code = -1
+		}
+	}
+	return string(out), code, err
+}
+
 func ExecShell(cmdStr, dir string, live bool) (string, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()

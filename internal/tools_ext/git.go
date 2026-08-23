@@ -31,11 +31,13 @@ const (
 )
 
 // runGit executes a read-only git command in the sandbox root and returns its
-// combined output. `--no-pager` prevents git from trying to invoke a pager in
-// a non-interactive context.
+// combined output. It uses a direct argv vector (agent.ExecArgv) — NOT a
+// shell — so a git ref or path containing shell metacharacters (;, |, `,
+// $(), &) is passed to git verbatim and cannot inject a command. `--no-pager`
+// prevents git from trying to invoke a pager in a non-interactive context.
 func runGit(s *agent.Sandbox, args ...string) (string, int, error) {
-	cmd := "git --no-pager " + strings.Join(args, " ")
-	return agent.ExecShell(cmd, s.Root, false)
+	full := append([]string{"--no-pager"}, args...)
+	return agent.ExecArgv(s.Root, "git", full...)
 }
 
 func toolGitLog(s *agent.Sandbox, a agent.ToolArgs) string {
@@ -46,10 +48,11 @@ func toolGitLog(s *agent.Sandbox, a agent.ToolArgs) string {
 	if n > 100 {
 		n = 100
 	}
-	// %h short hash, %an author, %ad date (short), %s subject.
+	// %h short hash, %an author, %ad date (short), %s subject. No shell
+	// quoting — ExecArgv passes this as one argv element verbatim.
 	format := strings.Join([]string{"%h", "%an", "%ad", "%s"}, gitFieldSep) + gitRecordSep
 	args := []string{"log", "--date=short", fmt.Sprintf("--max-count=%d", n),
-		fmt.Sprintf("--pretty=format:%s", "'"+format+"'")}
+		"--pretty=format:" + format}
 
 	// Optional path scope: confine it to the workspace first.
 	if p := strings.TrimSpace(a.Str("path")); p != "" {
@@ -73,7 +76,7 @@ func toolGitLog(s *agent.Sandbox, a agent.ToolArgs) string {
 // formatGitLog turns the separator-delimited log into an aligned, readable
 // table the model can scan: "hash  date  author  subject".
 func formatGitLog(raw string) string {
-	raw = strings.Trim(strings.TrimSpace(raw), "'")
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "No commits (empty repository or no history for that path)."
 	}
@@ -112,7 +115,8 @@ func toolGitBlame(s *agent.Sandbox, a agent.ToolArgs) string {
 		if end <= 0 || end < start {
 			end = start
 		}
-		args = append(args, fmt.Sprintf("-L %d,%d", start, end))
+		// -L<start>,<end> as ONE argv token (no shell to split "-L 1,5").
+		args = append(args, fmt.Sprintf("-L%d,%d", start, end))
 	}
 	args = append(args, "--", abs)
 
