@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/davasorus/computah/internal/agent"
 	"github.com/davasorus/computah/internal/core"
@@ -46,8 +47,8 @@ func TestTUIThinkingUpdatesIndicator(t *testing.T) {
 }
 
 func TestTUIEnterSubmitsAndDisablesInput(t *testing.T) {
-	var submitted string
-	m := newTUIModel(func(s string) { submitted = s })
+	submitted := make(chan string, 1)
+	m := newTUIModel(func(s string) { submitted <- s })
 	m.width, m.height = 100, 30 // so Update doesn't divide by zero on sizes
 	m.input.SetValue("do the thing")
 	// Simulate Enter.
@@ -56,12 +57,19 @@ func TestTUIEnterSubmitsAndDisablesInput(t *testing.T) {
 	if !nm.busy {
 		t.Fatal("model should be busy after submit")
 	}
-	// submit runs in a goroutine; give it a beat isn't reliable, so just
-	// assert the input was consumed and busy flipped.
 	if nm.input.Value() != "" {
 		t.Fatalf("input should reset after submit, got %q", nm.input.Value())
 	}
-	_ = submitted
+	// submit runs in a goroutine; wait for it so the -race detector sees a
+	// proper happens-before on the callback's write.
+	select {
+	case got := <-submitted:
+		if got != "do the thing" {
+			t.Fatalf("submit callback got %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("submit callback was not invoked")
+	}
 }
 
 func TestTUIQuitKeys(t *testing.T) {
@@ -148,15 +156,24 @@ func TestMultilineToggle(t *testing.T) {
 }
 
 func TestTUIBrowserPromptStartsTurn(t *testing.T) {
-	var submitted string
-	m := newTUIModel(func(s string) { submitted = s })
+	submitted := make(chan string, 2)
+	m := newTUIModel(func(s string) { submitted <- s })
 	m.width, m.height = 100, 30
 	updated, _ := m.Update(browserPromptMsg{text: "prompt from browser"})
 	nm := updated.(tuiModel)
 	if !nm.busy {
 		t.Fatal("browser prompt should start a turn (busy=true)")
 	}
-	_ = submitted
+	// Wait for the first turn's callback so the -race detector sees a proper
+	// happens-before on the write.
+	select {
+	case got := <-submitted:
+		if got != "prompt from browser" {
+			t.Fatalf("first submit got %q", got)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("first browser prompt did not start a turn")
+	}
 	// A browser prompt while busy is ignored (no crash, no double-run).
 	updated2, _ := nm.Update(browserPromptMsg{text: "second while busy"})
 	nm2 := updated2.(tuiModel)
