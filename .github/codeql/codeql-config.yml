@@ -1,0 +1,15 @@
+# CodeQL configuration for computah.
+#
+# The key job here is loading computah's own model pack (models/), which
+# declares core.ConfinePath as a path-injection barrier. Without this, CodeQL
+# can't see that ConfinePath sanitizes a path and raises false-positive
+# go/path-injection alerts on every ConfinePath-guarded filesystem sink
+# (e.g. internal/web/headless.go). See models/computah-barriers.model.yml.
+name: computah CodeQL config
+
+packs:
+  # Local model pack: teaches the Go queries about our custom barrier.
+  - davasorus/computah-models
+
+queries:
+  - uses: security-and-quality

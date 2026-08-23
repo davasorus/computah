@@ -1,0 +1,42 @@
+# CodeQL advanced setup. Replaces GitHub's default setup so we can load a
+# custom config (and our barrier model pack). If default ("code scanning
+# default setup") is still enabled in repo Settings → Code security, disable
+# it — default and advanced setup can't both run for the same language.
+name: CodeQL
+
+on:
+  push:
+    branches: [live]
+  pull_request:
+    branches: [live]
+  schedule:
+    - cron: "27 3 * * 1" # weekly, Monday 03:27 UTC
+
+jobs:
+  analyze:
+    name: Analyze (go)
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26"
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: go
+          build-mode: autobuild
+          config-file: ./.github/codeql/codeql-config.yml
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:go"
