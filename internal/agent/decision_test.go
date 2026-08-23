@@ -13,7 +13,7 @@ func TestRecordDecisionWritesFrontmatter(t *testing.T) {
 	defer delete(toolByName, "record_decision")
 
 	sb := &Sandbox{Root: t.TempDir()}
-	out := sb.toolRecordDecision(toolArgs{
+	out := toolRecordDecision(sb, toolArgs{
 		"title":   "Why PromoteIS needs GUID convergence",
 		"type":    "rca",
 		"project": "ims-promote",
@@ -46,15 +46,15 @@ func TestRecordDecisionDefaultsAndValidation(t *testing.T) {
 	setupVault(t)
 	sb := &Sandbox{Root: t.TempDir()}
 	// missing body → error
-	if out := sb.toolRecordDecision(toolArgs{"title": "x"}); !strings.HasPrefix(out, "ERROR") {
+	if out := toolRecordDecision(sb, toolArgs{"title": "x"}); !strings.HasPrefix(out, "ERROR") {
 		t.Fatal("missing body should error")
 	}
 	// bad type → error
-	if out := sb.toolRecordDecision(toolArgs{"title": "x", "body": "y", "type": "bogus"}); !strings.HasPrefix(out, "ERROR") {
+	if out := toolRecordDecision(sb, toolArgs{"title": "x", "body": "y", "type": "bogus"}); !strings.HasPrefix(out, "ERROR") {
 		t.Fatal("bad type should error")
 	}
 	// default type = decision
-	out := sb.toolRecordDecision(toolArgs{"title": "defaulted", "body": "b"})
+	out := toolRecordDecision(sb, toolArgs{"title": "defaulted", "body": "b"})
 	if strings.HasPrefix(out, "ERROR") {
 		t.Fatalf("valid minimal call errored: %s", out)
 	}

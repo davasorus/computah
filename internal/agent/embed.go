@@ -438,7 +438,7 @@ func ensureCodeIndex(root string) (*codeIndex, error) {
 	return idx, nil
 }
 
-func (s *Sandbox) toolCodeSearch(a toolArgs) string {
+func toolCodeSearch(s *Sandbox, a toolArgs) string {
 	query := strings.TrimSpace(a.str("query"))
 	if query == "" {
 		return "ERROR: query must not be empty"
@@ -491,7 +491,7 @@ func registerEmbedTools() {
 			"query": map[string]any{"type": "string", "description": "What the code does, in plain words"},
 		},
 		Required: []string{"query"},
-		Handler:  (*Sandbox).toolCodeSearch,
+		Handler:  toolCodeSearch,
 	})
 	readOnlyTools["code_search"] = true
 	buildToolSchemas()

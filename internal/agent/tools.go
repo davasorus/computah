@@ -231,7 +231,7 @@ func init() {
 				"role": map[string]any{"type": "string", "description": "Optional named agent role from .agent/agents/ (ask the user, or omit for a plain subtask)"},
 			},
 			Required: []string{"task"},
-			Handler:  (*Sandbox).toolSpawnTask,
+			Handler:  toolSpawnTask,
 		},
 		Tool{
 			Name: "update_todos",

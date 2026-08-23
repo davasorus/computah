@@ -39,7 +39,7 @@ import (
 
 // ---------- Atomic multi-file edits ----------
 
-func (s *Sandbox) toolEditFiles(a toolArgs) string {
+func toolEditFiles(s *Sandbox, a toolArgs) string {
 	raw, err := json.Marshal(a["edits"])
 	if err != nil {
 		return "ERROR: bad edits payload"
@@ -145,7 +145,7 @@ func goplsAvailable() bool {
 	return goplsAvail
 }
 
-func (s *Sandbox) toolRenameSymbol(a toolArgs) string {
+func toolRenameSymbol(s *Sandbox, a toolArgs) string {
 	if !goplsAvailable() {
 		return "ERROR: gopls is not installed (go install golang.org/x/tools/gopls@latest). " +
 			"Fall back to edit_files: change the declaration and every caller in one atomic set."
@@ -193,7 +193,7 @@ func (s *Sandbox) toolRenameSymbol(a toolArgs) string {
 	return "OK: " + msg + " — run go_diagnostics or the verify command to confirm the build."
 }
 
-func (s *Sandbox) toolGoDiagnostics(a toolArgs) string {
+func toolGoDiagnostics(s *Sandbox, a toolArgs) string {
 	if !goplsAvailable() {
 		return "ERROR: gopls is not installed — run the verify command (go build/test) instead."
 	}
@@ -354,7 +354,7 @@ func registerStructuredTools() {
 				},
 			},
 			Required: []string{"edits"},
-			Handler:  (*Sandbox).toolEditFiles,
+			Handler:  toolEditFiles,
 		},
 		Tool{
 			Name: "rename_symbol",
@@ -365,7 +365,7 @@ func registerStructuredTools() {
 				"new_name": map[string]any{"type": "string", "description": "New identifier name"},
 			},
 			Required: []string{"file", "symbol", "new_name"},
-			Handler:  (*Sandbox).toolRenameSymbol,
+			Handler:  toolRenameSymbol,
 		},
 		Tool{
 			Name: "go_diagnostics",
@@ -373,7 +373,7 @@ func registerStructuredTools() {
 			Props: map[string]any{
 				"path": map[string]any{"type": "string", "description": "Optional file or directory to check (default: whole workdir)"},
 			},
-			Handler: (*Sandbox).toolGoDiagnostics,
+			Handler: toolGoDiagnostics,
 		},
 	)
 	readOnlyTools["go_diagnostics"] = true

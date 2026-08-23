@@ -39,12 +39,12 @@ func registerDecisionTool() {
 			"body":    map[string]any{"type": "string", "description": "The note body in markdown: conclusion first, then reasoning. One idea per note."},
 		},
 		Required: []string{"title", "type", "body"},
-		Handler:  (*Sandbox).toolRecordDecision,
+		Handler:  toolRecordDecision,
 	})
 	buildToolSchemas()
 }
 
-func (s *Sandbox) toolRecordDecision(a toolArgs) string {
+func toolRecordDecision(s *Sandbox, a toolArgs) string {
 	title := strings.TrimSpace(a.str("title"))
 	noteType := strings.TrimSpace(a.str("type"))
 	project := strings.TrimSpace(a.str("project"))

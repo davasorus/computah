@@ -199,7 +199,7 @@ func TestCodeSearchEndToEnd(t *testing.T) {
 	defer func() { embedFn, embedModel = oldEmbed, oldModel }()
 
 	sb := &Sandbox{Root: root}
-	out := sb.toolCodeSearch(toolArgs{"query": "cluster ip problem handling"})
+	out := toolCodeSearch(sb, toolArgs{"query": "cluster ip problem handling"})
 	if !strings.Contains(out, "db.go:") {
 		t.Fatalf("semantic hit must name db.go with a line: %s", out)
 	}
@@ -207,7 +207,7 @@ func TestCodeSearchEndToEnd(t *testing.T) {
 		t.Fatalf("skip dirs must be excluded: %s", out)
 	}
 	firstCalls := calls
-	_ = sb.toolCodeSearch(toolArgs{"query": "cluster again"})
+	_ = toolCodeSearch(sb, toolArgs{"query": "cluster again"})
 	if calls != firstCalls+1 { // only the query embedding, no re-index
 		t.Fatalf("unchanged workdir must not re-embed: %d extra calls", calls-firstCalls)
 	}

@@ -561,7 +561,7 @@ var spawnDepth int
 // summary returns to the parent. This is the real fix for context growth on
 // big tasks — exploration garbage from step 1 never pollutes step 8 — and
 // it's why elision/compaction are palliatives once this exists.
-func (s *Sandbox) toolSpawnTask(a toolArgs) string {
+func toolSpawnTask(s *Sandbox, a toolArgs) string {
 	task := strings.TrimSpace(a.str("task"))
 	if task == "" {
 		return "ERROR: task must describe the subtask to perform"
