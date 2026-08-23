@@ -77,7 +77,12 @@ func RunHeadless(baseURL, model string, sb *agent.Sandbox, st *agent.SessionStor
 			st.Append(messages)
 
 		case agent.InputFile:
-			data, err := os.ReadFile(arg)
+			abs, err := core.ConfinePath(sb.Root, arg)
+			if err != nil {
+				core.EmitError("  @ " + err.Error())
+				continue
+			}
+			data, err := os.ReadFile(abs)
 			if err != nil {
 				core.EmitError("  @ cannot read " + arg + ": " + err.Error())
 				continue

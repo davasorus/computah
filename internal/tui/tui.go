@@ -468,7 +468,12 @@ func RunTUI(baseURL, model string, sb *agent.Sandbox, st *agent.SessionStore, me
 		st.Append(messages)
 	}
 	m.onFile = func(path string) {
-		data, err := os.ReadFile(path)
+		abs, err := core.ConfinePath(sb.Root, path)
+		if err != nil {
+			core.EmitError("  @ " + err.Error())
+			return
+		}
+		data, err := os.ReadFile(abs)
 		if err != nil {
 			core.EmitError("  @ cannot read " + path + ": " + err.Error())
 			return

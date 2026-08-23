@@ -14,6 +14,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/davasorus/computah/internal/core"
 )
 
 // ---------- Tool registry ----------
@@ -537,10 +539,11 @@ func (s *Sandbox) resolve(p string) (string, error) {
 	if p == "" {
 		p = "."
 	}
-	if filepath.IsAbs(p) {
-		return filepath.Clean(p), nil
-	}
-	return filepath.Abs(filepath.Join(s.Root, p))
+	// Confine to the sandbox root: the agent operates only within its working
+	// directory, so paths that escape it (via "..", or an absolute path
+	// elsewhere) are rejected. This is the single chokepoint for all
+	// model-driven file access.
+	return core.ConfinePath(s.Root, p)
 }
 
 // backup copies an existing file to <path>.bak; returns whether it existed.
@@ -1119,7 +1122,14 @@ func (s *Sandbox) toolFetchURL(a toolArgs) string {
 func ExecShell(cmdStr, dir string, live bool) (string, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "bash", "-lc", cmdStr)
+	// Running a model-proposed shell command is the core, intended function of
+	// this agent — it cannot be "sanitized" without removing the feature. The
+	// security control is the human-in-the-loop approval gate in
+	// toolRunCommand (mutating commands are declined by default and require
+	// explicit y/always, plus a pre_command hook), not input escaping. This
+	// flow is only reached after that gate. CodeQL's command-injection rule is
+	// suppressed here as reviewed and safe-by-design.
+	cmd := exec.CommandContext(ctx, "bash", "-lc", cmdStr) // #nosec G204 -- gated by user approval in toolRunCommand
 	cmd.Dir = dir
 	setProcessGroup(cmd)            // platform-specific: kill the whole process tree on cancel
 	cmd.WaitDelay = 5 * time.Second // don't block forever on inherited pipes
