@@ -60,6 +60,7 @@ func init() {
 		toolsext.RegisterEmbedTools,
 		toolsext.RegisterStructuredTools,
 		toolsext.RegisterVaultTools,
+		toolsext.RegisterGitTools,
 	)
 
 	// Persistent flags available to every subcommand. Bound to Viper so a
