@@ -251,10 +251,12 @@ func (m *tuiModel) applyEvent(e core.Event) {
 		if e.Meta != nil && e.Meta["inline"] == "1" {
 			suffix = " [inline]"
 		}
-		m.appendLine(stTool.Render("  ⚙ " + e.Tool + "(" + e.Text + ")" + suffix))
+		st := core.StyleFor(core.EvToolCall)
+		m.appendLine(stTool.Render(st.Pad() + st.Glyph + " " + e.Tool + "(" + e.Text + ")" + suffix))
 	case core.EvToolDone:
 		if e.Text != "" {
-			m.appendLine(stDim.Render("    " + e.Text))
+			st := core.StyleFor(core.EvToolDone)
+			m.appendLine(stDim.Render(st.Pad() + st.Glyph + " " + e.Text))
 		}
 	case core.EvError:
 		m.appendLine(stErr.Render(e.Text))

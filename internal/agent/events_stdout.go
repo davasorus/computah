@@ -11,7 +11,11 @@
 // since it owns the screen).
 package agent
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/davasorus/computah/internal/core"
+)
 
 type stdoutSubscriber struct {
 	silent bool // TUI sets this so stdout doesn't fight the full-screen UI
@@ -35,10 +39,12 @@ func (s *stdoutSubscriber) OnEvent(e Event) {
 		if e.Meta["inline"] == "1" {
 			suffix = " [inline]"
 		}
-		fmt.Println(tint(cDim, "  ⚙ "+e.Tool+"("+e.Text+")"+suffix))
+		st := core.StyleFor(EvToolCall)
+		fmt.Println(tint(cDim, st.Pad()+st.Glyph+" "+e.Tool+"("+e.Text+")"+suffix))
 	case EvToolDone:
 		if e.Text != "" {
-			fmt.Println(tint(cDim, "    "+e.Text))
+			st := core.StyleFor(EvToolDone)
+			fmt.Println(tint(cDim, st.Pad()+st.Glyph+" "+e.Text))
 		}
 	case EvError:
 		fmt.Println(tint(cRed, e.Text))
