@@ -49,3 +49,15 @@ var (
 	emitToolDone       = core.EmitToolDone
 	emitStats          = core.EmitStats
 )
+
+// --- styling primitives (moved to core) ---
+var useColor = core.UseColor
+var tint = core.Tint
+
+const (
+	cDim    = core.ColorDim
+	cRed    = core.ColorRed
+	cGreen  = core.ColorGreen
+	cYellow = core.ColorYellow
+	cCyan   = core.ColorCyan
+)

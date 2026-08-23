@@ -424,28 +424,6 @@ func askLine(prompt string) (string, bool) {
 
 // useColor: ANSI styling only when stdout is a real terminal and the user
 // hasn't opted out via NO_COLOR.
-var useColor = func() bool {
-	if os.Getenv("NO_COLOR") != "" {
-		return false
-	}
-	fi, err := os.Stdout.Stat()
-	return err == nil && fi.Mode()&os.ModeCharDevice != 0
-}()
-
-func tint(code, s string) string {
-	if !useColor {
-		return s
-	}
-	return "\033[" + code + "m" + s + "\033[0m"
-}
-
-const (
-	cDim    = "2"
-	cRed    = "31"
-	cGreen  = "32"
-	cYellow = "33"
-	cCyan   = "36"
-)
 
 // A little personality while the model works, Claude Code style.
 var thinkingLabels = []string{
