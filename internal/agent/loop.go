@@ -122,7 +122,7 @@ func streamChat(baseURL, model string, messages []Message) (Message, bool, error
 // execute any tool calls (read-only ones concurrently), append results, and
 // repeat until the model answers with plain text. No iteration cap by
 // design — the loop breaker and the user's Ctrl+C are the exits.
-func runTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Message) []Message {
+func RunTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Message) []Message {
 	emitBusy(true)
 	defer emitBusy(false)
 	lastCall := ""      // signature of the previous single tool call, to break retry loops
@@ -508,7 +508,7 @@ func runPlanTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages 
 // working code": the model's claim of being done is checked, every time.
 // If a fix attempt modifies nothing, retrying is pointless and control
 // returns to the user immediately.
-func runVerifyLoop(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Message, modifiedBefore int) []Message {
+func RunVerifyLoop(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Message, modifiedBefore int) []Message {
 	const maxFixAttempts = 2
 	if verifyCommand == "" || len(sb.Modified) == modifiedBefore {
 		return messages

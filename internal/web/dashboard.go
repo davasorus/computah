@@ -1,7 +1,7 @@
 // Web dashboard — a read-only live view of the agent, served over HTTP.
 //
 // Step 2 of the front-end plan. The dashboard is a second subscriber to the
-// event bus (stdout is the first): every event the terminal renders is also
+// event core.Bus (stdout is the first): every event the terminal renders is also
 // pushed to any connected browser over Server-Sent Events. Enable with
 // -serve (defaults to :7777) or -serve :PORT.
 //
@@ -15,11 +15,13 @@
 // choice for a small embedded status server. SSE (not websockets) because
 // the data flow is one-directional (server→browser) and SSE reconnects
 // itself and rides plain HTTP.
-package agent
+package web
 
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/core"
 	"net/http"
 	"strings"
 	"sync"
@@ -28,23 +30,23 @@ import (
 
 // dashClient is one connected browser (one SSE stream).
 type dashClient struct {
-	ch chan Event
+	ch chan core.Event
 }
 
-// dashboard is the SSE hub: a bus subscriber that fans events out to every
+// dashboard is the SSE hub: a core.Bus subscriber that fans events out to every
 // connected browser.
 type dashboard struct {
 	mu      sync.Mutex
 	clients map[*dashClient]bool
-	ring    []Event // recent events, replayed to new connections so a fresh browser isn't blank
+	ring    []core.Event // recent events, replayed to new connections so a fresh browser isn't blank
 }
 
 const dashRingSize = 500
 
 var dash = &dashboard{clients: map[*dashClient]bool{}}
 
-// OnEvent is the Subscriber implementation — fan out to browsers + keep a ring.
-func (d *dashboard) OnEvent(e Event) {
+// OnEvent is the core.Subscriber implementation — fan out to browsers + keep a ring.
+func (d *dashboard) OnEvent(e core.Event) {
 	d.mu.Lock()
 	d.ring = append(d.ring, e)
 	if len(d.ring) > dashRingSize {
@@ -64,10 +66,10 @@ func (d *dashboard) OnEvent(e Event) {
 }
 
 func (d *dashboard) addClient() *dashClient {
-	c := &dashClient{ch: make(chan Event, 256)}
+	c := &dashClient{ch: make(chan core.Event, 256)}
 	d.mu.Lock()
 	// Seed with the recent ring so a new browser shows history immediately.
-	backfill := make([]Event, len(d.ring))
+	backfill := make([]core.Event, len(d.ring))
 	copy(backfill, d.ring)
 	d.clients[c] = true
 	d.mu.Unlock()
@@ -87,11 +89,11 @@ func (d *dashboard) removeClient(c *dashClient) {
 	close(c.ch)
 }
 
-// startDashboard subscribes to the bus and serves the dashboard on addr.
+// startDashboard subscribes to the core.Bus and serves the dashboard on addr.
 // Runs in a goroutine; returns immediately. Best-effort — a bind failure
 // warns and the agent continues (the dashboard is optional).
-func startDashboard(addr string) {
-	bus.Subscribe(dash)
+func StartDashboard(addr string) {
+	core.Bus.Subscribe(dash)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", dashIndexHandler)
@@ -106,14 +108,14 @@ func startDashboard(addr string) {
 		if dashAllowWrite {
 			mode = "read-write"
 		}
-		emitStatus("dashboard: serving on http://" + addr + " (" + mode + ")")
+		core.EmitStatus("dashboard: serving on http://" + addr + " (" + mode + ")")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			emitError("dashboard: " + err.Error() + " (continuing without it)")
+			core.EmitError("dashboard: " + err.Error() + " (continuing without it)")
 		}
 	}()
 }
 
-// dashEventsHandler is the SSE stream: pushes every bus event to the browser.
+// dashEventsHandler is the SSE stream: pushes every core.Bus event to the browser.
 func dashEventsHandler(w http.ResponseWriter, r *http.Request) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -157,41 +159,19 @@ func dashEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 // dashStateHandler returns a JSON snapshot (stats + todos) polled by the UI.
 func dashStateHandler(w http.ResponseWriter, r *http.Request) {
-	stats.mu.Lock()
+	snap := agent.Stats()
 	st := map[string]any{
-		"requests":     stats.requests,
-		"prompt_tk":    stats.promptTk,
-		"gen_tk":       stats.genTk,
-		"think_tk":     stats.thinkTk,
-		"last_ttfb_ms": stats.lastTTFB.Milliseconds(),
+		"requests":     snap.Requests,
+		"prompt_tk":    snap.PromptTk,
+		"gen_tk":       snap.GenTk,
+		"think_tk":     snap.ThinkTk,
+		"last_ttfb_ms": snap.LastTTFBms,
 	}
-	stats.mu.Unlock()
 
-	var td []todoItem
-	td = append(td, todos...)
+	td := agent.Todos()
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{"stats": st, "todos": td, "can_submit": dashAllowWrite})
-}
-
-// browserSubmissions carries prompts submitted from the web dashboard into
-// whichever front-end is running. Buffered so the HTTP handler never blocks.
-// The REPL selects over this channel alongside terminal input; the TUI
-// bridges it into the bubbletea loop via a watcher goroutine. Either way a
-// browser prompt wakes the loop promptly — it no longer waits for a terminal
-// Enter.
-var browserSubmissions = make(chan string, 16)
-
-// drainBrowserSubmission returns a queued browser prompt if one is waiting,
-// else "" — non-blocking. Retained for tests and any non-selecting caller;
-// the live REPL/TUI paths consume the channel directly.
-func drainBrowserSubmission() string {
-	select {
-	case s := <-browserSubmissions:
-		return s
-	default:
-		return ""
-	}
 }
 
 // dashSubmitHandler accepts a browser-submitted prompt (POST /api/submit,
@@ -214,7 +194,7 @@ func dashSubmitHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	select {
-	case browserSubmissions <- body.Text:
+	case core.BrowserSubmissions <- body.Text:
 		w.WriteHeader(http.StatusAccepted)
 		w.Write([]byte(`{"queued":true}`))
 	default:
@@ -241,16 +221,16 @@ func dashApproveHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "expected {\"id\":..,\"decision\":..}", http.StatusBadRequest)
 		return
 	}
-	var d approvalDecision
+	var d agent.ApprovalDecision
 	switch body.Decision {
 	case "once":
-		d = approveOnce
+		d = agent.ApproveOnce
 	case "always":
-		d = approveAlways
+		d = agent.ApproveAlways
 	default:
-		d = approveDeny
+		d = agent.ApproveDeny
 	}
-	if approvals.answerWeb(body.ID, d) {
+	if agent.AnswerWebApproval(body.ID, d) {
 		w.WriteHeader(http.StatusAccepted)
 		w.Write([]byte(`{"ok":true}`))
 	} else {
@@ -266,3 +246,7 @@ func dashIndexHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprint(w, dashHTML)
 }
+
+// SetDashWrite enables or disables browser prompt submissions (the cmd layer
+// wires this to Options.SetDashWrite).
+func SetDashWrite(allow bool) { dashAllowWrite = allow }

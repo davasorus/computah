@@ -1,6 +1,8 @@
-package agent
+package web
 
 import (
+	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/core"
 	"strings"
 	"testing"
 	"time"
@@ -8,11 +10,11 @@ import (
 
 // TestHeadlessInfoCommandRoutes verifies a browser-submitted read-only
 // command is handled via the shared dispatcher and its output emitted to the
-// bus — without needing a live model turn.
+// core.Bus — without needing a live model turn.
 func TestHeadlessInfoCommandRoutes(t *testing.T) {
 	var lines []string
-	unsub := bus.Subscribe(SubscriberFunc(func(e Event) {
-		if e.Kind == EvLine || e.Kind == EvStatus {
+	unsub := core.Bus.Subscribe(core.SubscriberFunc(func(e core.Event) {
+		if e.Kind == core.EvLine || e.Kind == core.EvStatus {
 			lines = append(lines, e.Text)
 		}
 	}))
@@ -20,11 +22,11 @@ func TestHeadlessInfoCommandRoutes(t *testing.T) {
 
 	// Directly exercise the classification + info-dispatch path the headless
 	// loop uses (we don't spin the whole loop — that needs a model).
-	kind, arg := classifyInput("/tools")
-	if kind != inputCommand {
+	kind, arg := agent.ClassifyInput("/tools")
+	if kind != agent.InputCommand {
 		t.Fatalf("/tools should classify as command, got %d", kind)
 	}
-	out, handled := runInfoCommand(arg, "http://x", "m", nil, &SessionStore{})
+	out, handled := agent.RunInfoCommand(arg, "http://x", "m", nil, &agent.SessionStore{})
 	if !handled || !strings.Contains(out, "available tools") {
 		t.Fatalf("/tools should be handled with tool list, got handled=%v out=%q", handled, out)
 	}
@@ -35,16 +37,16 @@ func TestHeadlessInfoCommandRoutes(t *testing.T) {
 // headless consumer would see submissions in order (queue-level test).
 func TestHeadlessQueueOrder(t *testing.T) {
 	// drain any residue
-	for len(browserSubmissions) > 0 {
-		<-browserSubmissions
+	for len(core.BrowserSubmissions) > 0 {
+		<-core.BrowserSubmissions
 	}
-	browserSubmissions <- "first"
-	browserSubmissions <- "second"
+	core.BrowserSubmissions <- "first"
+	core.BrowserSubmissions <- "second"
 	got := []string{}
 	timeout := time.After(time.Second)
 	for len(got) < 2 {
 		select {
-		case s := <-browserSubmissions:
+		case s := <-core.BrowserSubmissions:
 			got = append(got, s)
 		case <-timeout:
 			t.Fatal("timed out draining queue")

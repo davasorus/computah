@@ -1,6 +1,8 @@
-package agent
+package tui
 
 import (
+	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/core"
 	"strings"
 	"testing"
 
@@ -9,11 +11,11 @@ import (
 
 func TestTUIApplyEventBuildsTranscript(t *testing.T) {
 	m := newTUIModel(func(string) {})
-	m.applyEvent(Event{Kind: EvUser, Text: "hi"}) // user events aren't added by applyEvent (added on submit)
-	m.applyEvent(Event{Kind: EvToolCall, Tool: "read_file", Text: `{"path":"x"}`})
-	m.applyEvent(Event{Kind: EvAssistant, Text: "line one"})
-	m.applyEvent(Event{Kind: EvAssistant, Text: "line two"})
-	m.applyEvent(Event{Kind: EvError, Text: "boom"})
+	m.applyEvent(core.Event{Kind: core.EvUser, Text: "hi"}) // user events aren't added by applyEvent (added on submit)
+	m.applyEvent(core.Event{Kind: core.EvToolCall, Tool: "read_file", Text: `{"path":"x"}`})
+	m.applyEvent(core.Event{Kind: core.EvAssistant, Text: "line one"})
+	m.applyEvent(core.Event{Kind: core.EvAssistant, Text: "line two"})
+	m.applyEvent(core.Event{Kind: core.EvError, Text: "boom"})
 
 	joined := strings.Join(m.lines, "|")
 	if !strings.Contains(joined, "read_file") {
@@ -36,7 +38,7 @@ func TestTUIApplyEventBuildsTranscript(t *testing.T) {
 
 func TestTUIThinkingUpdatesIndicator(t *testing.T) {
 	m := newTUIModel(func(string) {})
-	m.applyEvent(Event{Kind: EvThinking, Text: "thinking (~500 tokens)"})
+	m.applyEvent(core.Event{Kind: core.EvThinking, Text: "thinking (~500 tokens)"})
 	if m.thinking != "thinking (~500 tokens)" {
 		t.Fatalf("thinking indicator not set: %q", m.thinking)
 	}
@@ -111,18 +113,18 @@ func TestTUIHistorySkipsDuplicates(t *testing.T) {
 func TestClassifyInput(t *testing.T) {
 	cases := []struct {
 		in   string
-		kind inputKind
+		kind agent.InputKind
 		arg  string
 	}{
-		{"hello world", inputPrompt, "hello world"},
-		{"!ls -la", inputShell, "ls -la"},
-		{"@main.go", inputFile, "main.go"},
-		{"/stats", inputCommand, "/stats"},
-		{"   ", inputBlank, ""},
-		{"", inputBlank, ""},
+		{"hello world", agent.InputPrompt, "hello world"},
+		{"!ls -la", agent.InputShell, "ls -la"},
+		{"@main.go", agent.InputFile, "main.go"},
+		{"/stats", agent.InputCommand, "/stats"},
+		{"   ", agent.InputBlank, ""},
+		{"", agent.InputBlank, ""},
 	}
 	for _, c := range cases {
-		k, a := classifyInput(c.in)
+		k, a := agent.ClassifyInput(c.in)
 		if k != c.kind || a != c.arg {
 			t.Fatalf("classify(%q)=(%d,%q) want (%d,%q)", c.in, k, a, c.kind, c.arg)
 		}

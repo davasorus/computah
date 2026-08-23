@@ -1,7 +1,7 @@
 // Headless mode — the agent driven solely from the web dashboard.
 //
 // No terminal reader, no TUI. The loop blocks on browser submissions and
-// runs each as a turn, with all output flowing through the event bus to the
+// runs each as a turn, with all output flowing through the event core.Bus to the
 // dashboard's SSE stream. This is the intended shape for "run it on a box,
 // interact from a browser (phone, laptop) on the LAN": there's no human at
 // the terminal, so there's nothing to select against — the browser queue is
@@ -13,10 +13,12 @@
 // affordances. Read-only /commands run via the shared dispatcher; stateful
 // ones report that they need the REPL (a headless session can't, e.g.,
 // /reload itself).
-package agent
+package web
 
 import (
 	"fmt"
+	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/core"
 	"os"
 	"os/signal"
 	"strconv"
@@ -24,14 +26,14 @@ import (
 	"syscall"
 )
 
-func runHeadless(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Message) {
+func RunHeadless(baseURL, model string, sb *agent.Sandbox, st *agent.SessionStore, messages []core.Message) {
 	// Headless has no terminal, so tool approvals must go to the browser.
-	setApprovalMode(approvalWeb)
-	// The dashboard renders bus events; make sure stdout also logs a little
+	agent.SetApprovalWeb()
+	// The dashboard renders core.Bus events; make sure stdout also logs a little
 	// so the operator watching the process sees life. We keep the stdout
 	// subscriber active (not silenced) so `docker logs` / the terminal shows
 	// activity, but there's no interactive prompt.
-	emitStatus("headless: no terminal UI — drive from the dashboard at the served address")
+	core.EmitStatus("headless: no terminal UI — drive from the dashboard at the served address")
 	fmt.Println("headless mode: open the dashboard to interact. Ctrl+C to quit.")
 
 	// Clean shutdown on SIGINT/SIGTERM.
@@ -39,13 +41,13 @@ func runHeadless(baseURL, model string, sb *Sandbox, st *SessionStore, messages 
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sig
-		emitStatus("headless: shutting down")
+		core.EmitStatus("headless: shutting down")
 		// best-effort session flush already happens per-turn
 		os.Exit(0)
 	}()
 
 	for {
-		text, ok := <-browserSubmissions
+		text, ok := <-core.BrowserSubmissions
 		if !ok {
 			return
 		}
@@ -53,49 +55,49 @@ func runHeadless(baseURL, model string, sb *Sandbox, st *SessionStore, messages 
 		if text == "" {
 			continue
 		}
-		emitUser(text)
+		core.EmitUser(text)
 
-		kind, arg := classifyInput(text)
+		kind, arg := agent.ClassifyInput(text)
 		switch kind {
-		case inputBlank:
+		case agent.InputBlank:
 			continue
 
-		case inputShell:
-			out, code, err := execShell(arg, sb.Root, false)
+		case agent.InputShell:
+			out, code, err := agent.ExecShell(arg, sb.Root, false)
 			detail := ""
 			if err != nil {
 				detail = " " + err.Error()
 			}
-			emitLine(tail(out, 4096))
-			messages = append(messages, Message{
+			core.EmitLine(agent.Tail(out, 4096))
+			messages = append(messages, core.Message{
 				Role:    "user",
-				Content: "[shell] $ " + arg + " (exit " + strconv.Itoa(code) + detail + ")\n" + tail(out, 8192),
+				Content: "[shell] $ " + arg + " (exit " + strconv.Itoa(code) + detail + ")\n" + agent.Tail(out, 8192),
 			})
 			st.Append(messages)
 
-		case inputFile:
+		case agent.InputFile:
 			data, err := os.ReadFile(arg)
 			if err != nil {
-				emitError("  @ cannot read " + arg + ": " + err.Error())
+				core.EmitError("  @ cannot read " + arg + ": " + err.Error())
 				continue
 			}
-			messages = append(messages, Message{
+			messages = append(messages, core.Message{
 				Role:    "user",
 				Content: "[attached " + arg + "]\n" + string(data),
 			})
 			st.Append(messages)
-			emitLine("  @ attached " + arg + " (" + strconv.Itoa(len(data)) + " bytes)")
+			core.EmitLine("  @ attached " + arg + " (" + strconv.Itoa(len(data)) + " bytes)")
 
-		case inputCommand:
-			if out, handled := runInfoCommand(arg, baseURL, model, messages, st); handled {
-				emitLine(strings.TrimRight(out, "\n"))
+		case agent.InputCommand:
+			if out, handled := agent.RunInfoCommand(arg, baseURL, model, messages, st); handled {
+				core.EmitLine(strings.TrimRight(out, "\n"))
 			} else {
-				emitStatus("  " + arg + " — stateful commands aren't available in headless mode (no REPL)")
+				core.EmitStatus("  " + arg + " — stateful commands aren't available in headless mode (no REPL)")
 			}
 
-		case inputPrompt:
-			messages = append(messages, Message{Role: "user", Content: text})
-			messages = runTurn(baseURL, model, sb, st, messages)
+		case agent.InputPrompt:
+			messages = append(messages, core.Message{Role: "user", Content: text})
+			messages = agent.RunTurn(baseURL, model, sb, st, messages)
 			messages = runVerifyLoopIfConfigured(baseURL, model, sb, st, messages)
 			st.Append(messages)
 		}
@@ -105,10 +107,10 @@ func runHeadless(baseURL, model string, sb *Sandbox, st *SessionStore, messages 
 // runVerifyLoopIfConfigured runs the verify loop when a verify command is
 // set, mirroring what the REPL does after a normal turn. Kept small and
 // separate so headless stays readable.
-func runVerifyLoopIfConfigured(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Message) []Message {
-	if verifyCommand == "" {
+func runVerifyLoopIfConfigured(baseURL, model string, sb *agent.Sandbox, st *agent.SessionStore, messages []core.Message) []core.Message {
+	if agent.VerifyCommand() == "" {
 		return messages
 	}
 	// modifiedBefore=0: the verify loop re-checks build/tests regardless.
-	return runVerifyLoop(baseURL, model, sb, st, messages, 0)
+	return agent.RunVerifyLoop(baseURL, model, sb, st, messages, 0)
 }

@@ -11,6 +11,8 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/tui"
+	"github.com/davasorus/computah/internal/web"
 )
 
 // persistent flags shared by all commands
@@ -84,7 +86,17 @@ func initConfig() {
 func resolvedURL() string   { return viper.GetString("url") }
 func resolvedModel() string { return viper.GetString("model") }
 
-// baseOptions seeds an agent.Options from the persistent (root) flags.
+// baseOptions seeds an agent.Options from the persistent (root) flags, and
+// wires the presentation hooks (tui/web) so the engine can launch them without
+// importing those packages itself.
 func baseOptions() agent.Options {
-	return agent.Options{URL: resolvedURL(), Model: resolvedModel(), Runs: 1}
+	return agent.Options{
+		URL:            resolvedURL(),
+		Model:          resolvedModel(),
+		Runs:           1,
+		StartDashboard: web.StartDashboard,
+		RunHeadless:    web.RunHeadless,
+		SetDashWrite:   web.SetDashWrite,
+		RunTUI:         tui.RunTUI,
+	}
 }

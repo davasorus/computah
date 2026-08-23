@@ -70,6 +70,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"github.com/davasorus/computah/internal/core"
 	"net"
 	"net/http"
 	"os"
@@ -333,6 +334,13 @@ type Options struct {
 	Tui            bool   // -tui
 	Headless       bool   // -headless
 	PositionalRoot string // optional workdir arg (was flag.Arg(0))
+
+	// Presentation hooks, supplied by the cmd layer so the engine never
+	// imports tui/web (which would create an import cycle). Any may be nil.
+	StartDashboard func(addr string)
+	RunTUI         func(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Message)
+	RunHeadless    func(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Message)
+	SetDashWrite   func(bool)
 }
 
 // Run is the agent entry point. It preserves the exact behavior of the former
@@ -357,7 +365,9 @@ func Run(opts Options) int {
 
 	// -serve: read-only web dashboard as a second bus subscriber.
 	if *serveFlag != "" || *serveWriteFlag || *headlessFlag {
-		dashAllowWrite = *serveWriteFlag || *headlessFlag
+		if opts.SetDashWrite != nil {
+			opts.SetDashWrite(*serveWriteFlag || *headlessFlag)
+		}
 		// Only headless has NO terminal, so only headless must route
 		// approvals to the browser. In -serve-write REPL/TUI the user is at
 		// the terminal, so approvals stay there (routing them to the browser
@@ -368,7 +378,9 @@ func Run(opts Options) int {
 		} else if addr[0] != ':' {
 			addr = ":" + addr // allow "-serve 7777"
 		}
-		startDashboard(addr)
+		if opts.StartDashboard != nil {
+			opts.StartDashboard(addr)
+		}
 	}
 	if cfg.CompactTokens > 0 {
 		autoCompactTokens = cfg.CompactTokens
@@ -515,7 +527,9 @@ func Run(opts Options) int {
 	// separate event loop (bubbletea owns stdin), so it replaces — not
 	// augments — the input loop below.
 	if *tuiFlag {
-		runTUI(baseURL, model, sb, st, messages)
+		if opts.RunTUI != nil {
+			opts.RunTUI(baseURL, model, sb, st, messages)
+		}
 		return 0
 	}
 
@@ -525,7 +539,9 @@ func Run(opts Options) int {
 	// dashboard renders over SSE). This is the clean web-only path: no TTY
 	// reader, no select race, no TUI. Ctrl+C (SIGINT) still quits.
 	if *headlessFlag {
-		runHeadless(baseURL, model, sb, st, messages)
+		if opts.RunHeadless != nil {
+			opts.RunHeadless(baseURL, model, sb, st, messages)
+		}
 		return 0
 	}
 
@@ -539,7 +555,7 @@ func Run(opts Options) int {
 		// terminal, use -headless.)
 		var input string
 		var ok bool
-		if q := drainBrowserSubmission(); q != "" {
+		if q := core.DrainBrowserSubmission(); q != "" {
 			input, ok = q, true
 			fmt.Println(tint(cDim, "  (from dashboard) ") + q)
 		} else {
@@ -1153,7 +1169,7 @@ func handleAllow(arg string) {
 
 // tail returns the last n bytes of s (for showing the end of long output,
 // where the actual error usually lives).
-func tail(s string, n int) string {
+func Tail(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}

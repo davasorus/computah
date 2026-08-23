@@ -1117,7 +1117,7 @@ func (s *Sandbox) toolFetchURL(a toolArgs) string {
 // captured in full for the tool result. Returns combined output and the exit
 // code; exitCode is -1 for timeouts and other non-exit errors. (Setpgid is
 // Linux/WSL2-only, which is where this agent lives.)
-func execShell(cmdStr, dir string, live bool) (string, int, error) {
+func ExecShell(cmdStr, dir string, live bool) (string, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "bash", "-lc", cmdStr)

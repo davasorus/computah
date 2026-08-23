@@ -1,7 +1,7 @@
 // Dashboard HTML — served at /. A single self-contained page: no build step,
 // no external assets, inline CSS/JS. Instrument-panel aesthetic: dark,
 // monospace, dense; the live event stream is the centerpiece.
-package agent
+package web
 
 const dashHTML = `<!doctype html>
 <html lang="en">

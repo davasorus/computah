@@ -55,7 +55,7 @@ type pendingApproval struct {
 var approvals = &approvalBrokerT{}
 
 // setApprovalMode is called at startup once the front-end is known.
-func setApprovalMode(m approvalModeT) {
+func SetApprovalMode(m approvalModeT) {
 	approvals.mu.Lock()
 	approvals.mode = m
 	approvals.mu.Unlock()

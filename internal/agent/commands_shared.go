@@ -68,7 +68,7 @@ func isInfoCommand(cmd string) bool {
 // handled is false if the command isn't a known read-only one (the caller
 // should then treat it as a stateful/REPL command). It needs a bit of
 // context (model, messages, session) to render some reports.
-func runInfoCommand(cmd, baseURL, model string, messages []Message, st *SessionStore) (string, bool) {
+func RunInfoCommand(cmd, baseURL, model string, messages []Message, st *SessionStore) (string, bool) {
 	fields := strings.Fields(strings.TrimSpace(cmd))
 	if len(fields) == 0 {
 		return "", false

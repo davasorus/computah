@@ -1,8 +1,10 @@
-package agent
+package web
 
 import (
 	"context"
 	"encoding/json"
+	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/core"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,8 +15,8 @@ import (
 func TestDashboardFanOutAndRing(t *testing.T) {
 	d := &dashboard{clients: map[*dashClient]bool{}}
 	// Pre-load ring, then connect: a new client should get the backfill.
-	d.OnEvent(Event{Kind: EvLine, Text: "old-1"})
-	d.OnEvent(Event{Kind: EvLine, Text: "old-2"})
+	d.OnEvent(core.Event{Kind: core.EvLine, Text: "old-1"})
+	d.OnEvent(core.Event{Kind: core.EvLine, Text: "old-2"})
 	c := d.addClient()
 	got := []string{}
 	for i := 0; i < 2; i++ {
@@ -29,7 +31,7 @@ func TestDashboardFanOutAndRing(t *testing.T) {
 		t.Fatalf("ring backfill wrong: %v", got)
 	}
 	// Live event after connect reaches the client.
-	d.OnEvent(Event{Kind: EvToolCall, Tool: "read_file", Text: "x"})
+	d.OnEvent(core.Event{Kind: core.EvToolCall, Tool: "read_file", Text: "x"})
 	select {
 	case e := <-c.ch:
 		if e.Tool != "read_file" {
@@ -47,7 +49,7 @@ func TestDashboardFanOutAndRing(t *testing.T) {
 func TestDashboardRingCap(t *testing.T) {
 	d := &dashboard{clients: map[*dashClient]bool{}}
 	for i := 0; i < dashRingSize+50; i++ {
-		d.OnEvent(Event{Kind: EvLine, Text: "x"})
+		d.OnEvent(core.Event{Kind: core.EvLine, Text: "x"})
 	}
 	if len(d.ring) != dashRingSize {
 		t.Fatalf("ring must cap at %d, got %d", dashRingSize, len(d.ring))
@@ -55,8 +57,8 @@ func TestDashboardRingCap(t *testing.T) {
 }
 
 func TestDashStateEndpoint(t *testing.T) {
-	todos = []todoItem{{Text: "wire dashboard", Done: true}, {Text: "build TUI", Done: false}}
-	defer func() { todos = nil }()
+	agent.SetTodos([]agent.TodoItem{{Text: "wire dashboard", Done: true}, {Text: "build TUI", Done: false}})
+	defer func() { agent.SetTodos(nil) }()
 	req := httptest.NewRequest("GET", "/api/state", nil)
 	w := httptest.NewRecorder()
 	dashStateHandler(w, req)
@@ -74,8 +76,8 @@ func TestDashStateEndpoint(t *testing.T) {
 }
 
 func TestDashSSEStreamDeliversEmittedEvent(t *testing.T) {
-	// End-to-end: a bus emit reaches the SSE HTTP response body.
-	// Fresh bus + dashboard so we don't entangle the global subscribers.
+	// End-to-end: a core.Bus emit reaches the SSE HTTP response body.
+	// Fresh core.Bus + dashboard so we don't entangle the global subscribers.
 	localDash := &dashboard{clients: map[*dashClient]bool{}}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Mimic dashEventsHandler but against localDash.
@@ -103,7 +105,7 @@ func TestDashSSEStreamDeliversEmittedEvent(t *testing.T) {
 	// Emit after a beat so the client is subscribed.
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		localDash.OnEvent(Event{Kind: EvToolCall, Tool: "grep", Text: "pat"})
+		localDash.OnEvent(core.Event{Kind: core.EvToolCall, Tool: "grep", Text: "pat"})
 	}()
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -151,8 +153,8 @@ func TestDashSubmitEnqueuesWhenEnabled(t *testing.T) {
 	dashAllowWrite = true
 	defer func() { dashAllowWrite = false }()
 	// drain any stale queue entries
-	for len(browserSubmissions) > 0 {
-		<-browserSubmissions
+	for len(core.BrowserSubmissions) > 0 {
+		<-core.BrowserSubmissions
 	}
 	req := httptest.NewRequest("POST", "/api/submit", strings.NewReader(`{"text":"do the thing"}`))
 	w := httptest.NewRecorder()
@@ -160,12 +162,12 @@ func TestDashSubmitEnqueuesWhenEnabled(t *testing.T) {
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("enabled dashboard must accept submits, got %d: %s", w.Code, w.Body.String())
 	}
-	got := drainBrowserSubmission()
+	got := core.DrainBrowserSubmission()
 	if got != "do the thing" {
 		t.Fatalf("submission not enqueued: %q", got)
 	}
 	// queue now empty → drain returns ""
-	if drainBrowserSubmission() != "" {
+	if core.DrainBrowserSubmission() != "" {
 		t.Fatal("drain should return empty when queue is empty")
 	}
 }

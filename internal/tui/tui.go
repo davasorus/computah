@@ -2,7 +2,7 @@
 //
 // Step 3 of the front-end plan. Like the dashboard, the TUI is an event-bus
 // subscriber; unlike the dashboard, it also OWNS the terminal, so when -tui
-// is active the stdout subscriber is silenced (stdoutSub.silent = true) to
+// is active the stdout subscriber is silenced (agent.SilenceStdout(true)) to
 // avoid fighting the render loop.
 //
 // Architecture note: bubbletea runs its own event loop and owns stdin, which
@@ -16,10 +16,11 @@
 //     @file, or """ multi-line yet. The REPL keeps those; the TUI gets them
 //     in a follow-up. Core loop (type prompt → watch panes stream) works.
 //   - Slash commands aren't routed through the TUI yet (they run in the REPL).
-package agent
+package tui
 
 import (
 	"fmt"
+	"github.com/davasorus/computah/internal/agent"
 	"github.com/davasorus/computah/internal/core"
 	"github.com/davasorus/computah/internal/md"
 	"os"
@@ -35,7 +36,7 @@ import (
 
 // --- messages piped from the bus / turn runner into the tea loop ---
 
-type busMsg Event         // a bus event forwarded into the model
+type busMsg core.Event    // a bus event forwarded into the model
 type turnDoneMsg struct{} // the current turn finished
 type turnErrMsg struct{ err string }
 type tickMsg struct{} // periodic rail refresh (todos/stats)
@@ -52,7 +53,7 @@ type tuiModel struct {
 	width     int
 	height    int
 	lines     []string // rendered conversation lines (the transcript)
-	todos     []todoItem
+	todos     []agent.TodoItem
 	thinking  string
 	statusReq int
 	busy      bool // a turn is running; input disabled
@@ -160,30 +161,30 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			kind, arg := classifyInput(raw)
+			kind, arg := agent.ClassifyInput(raw)
 			m.input.Reset()
 			switch kind {
-			case inputBlank:
+			case agent.InputBlank:
 				// nothing
-			case inputShell:
+			case agent.InputShell:
 				m.hist.add(raw)
 				if m.onShell != nil {
 					m.appendLine(stDim.Render("  ! " + arg))
 					go m.onShell(arg)
 				}
-			case inputFile:
+			case agent.InputFile:
 				m.hist.add(raw)
 				if m.onFile != nil {
 					m.appendLine(stDim.Render("  @ " + arg))
 					go m.onFile(arg)
 				}
-			case inputCommand:
+			case agent.InputCommand:
 				m.hist.add(raw)
 				if m.onCommand != nil {
 					m.appendLine(stStatus.Render(arg))
 					go m.onCommand(arg)
 				}
-			case inputPrompt:
+			case agent.InputPrompt:
 				m.hist.add(raw)
 				m.startPrompt(arg)
 			}
@@ -192,7 +193,7 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.hist.resetRecall() // any other edit ends recall
 		}
 	case busMsg:
-		m.applyEvent(Event(msg))
+		m.applyEvent(core.Event(msg))
 	case turnDoneMsg:
 		m.busy = false
 		m.thinking = ""
@@ -202,10 +203,8 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.appendLine(stErr.Render("error: " + msg.err))
 	case tickMsg:
 		// Pull current todos and stats into the model for the rail.
-		m.todos = append(m.todos[:0], todos...)
-		stats.mu.Lock()
-		m.statusReq = stats.requests
-		stats.mu.Unlock()
+		m.todos = append(m.todos[:0], agent.Todos()...)
+		m.statusReq = agent.Stats().Requests
 		return m, tickCmd()
 	case browserPromptMsg:
 		if !m.busy && strings.TrimSpace(msg.text) != "" {
@@ -236,9 +235,9 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 // applyEvent turns a bus event into transcript lines / state.
-func (m *tuiModel) applyEvent(e Event) {
+func (m *tuiModel) applyEvent(e core.Event) {
 	switch e.Kind {
-	case EvAssistant:
+	case core.EvAssistant:
 		// Coalesce consecutive assistant lines into the tail.
 		if n := len(m.lines); n > 0 && strings.HasPrefix(m.lines[n-1], "\x00asst") {
 			m.lines[n-1] += "\n" + e.Text
@@ -246,21 +245,21 @@ func (m *tuiModel) applyEvent(e Event) {
 			m.lines = append(m.lines, "\x00asst"+e.Text)
 		}
 		m.reflow()
-	case EvToolCall:
+	case core.EvToolCall:
 		suffix := ""
 		if e.Meta != nil && e.Meta["inline"] == "1" {
 			suffix = " [inline]"
 		}
 		m.appendLine(stTool.Render("  ⚙ " + e.Tool + "(" + e.Text + ")" + suffix))
-	case EvToolDone:
+	case core.EvToolDone:
 		if e.Text != "" {
 			m.appendLine(stDim.Render("    " + e.Text))
 		}
-	case EvError:
+	case core.EvError:
 		m.appendLine(stErr.Render(e.Text))
-	case EvStatus:
+	case core.EvStatus:
 		m.appendLine(stStatus.Render(e.Text))
-	case EvLine:
+	case core.EvLine:
 		if e.Meta != nil && e.Meta["raw"] == "1" {
 			// Pre-formatted diff — mark so reflow prints it verbatim (no
 			// markdown, no wrap; it's already width-constrained).
@@ -270,28 +269,28 @@ func (m *tuiModel) applyEvent(e Event) {
 		} else {
 			m.appendLine(e.Text)
 		}
-	case EvThinking:
+	case core.EvThinking:
 		m.thinking = e.Text
 		// header-only; transcript unchanged, no reflow (avoids flashing from
 		// high-frequency thinking-token updates)
-	case EvStats:
+	case core.EvStats:
 		// rail-only; nothing in the transcript changed
 	}
 }
 
 // tuiColor styles a line with the same color hint the terminal uses, mapped
-// to lipgloss. Keeps EvLine color hints consistent between REPL and TUI.
+// to lipgloss. Keeps core.EvLine color hints consistent between REPL and TUI.
 func tuiColor(code, text string) string {
 	switch code {
-	case cRed:
+	case core.ColorRed:
 		return stErr.Render(text)
-	case cGreen:
+	case core.ColorGreen:
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("2")).Render(text)
-	case cYellow:
+	case core.ColorYellow:
 		return lipgloss.NewStyle().Foreground(lipgloss.Color("3")).Render(text)
-	case cCyan:
+	case core.ColorCyan:
 		return stTool.Render(text)
-	case cDim:
+	case core.ColorDim:
 		return stDim.Render(text)
 	default:
 		return text
@@ -416,13 +415,13 @@ func (m tuiModel) renderRail(w int) string {
 
 // runTUI is the -tui entry point: replaces the REPL loop. It wires the bus
 // into the tea program and runs turns in a goroutine.
-func runTUI(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Message) {
+func RunTUI(baseURL, model string, sb *agent.Sandbox, st *agent.SessionStore, messages []core.Message) {
 	// bubbletea needs a real interactive terminal. Under a pipe, redirected
 	// stdin, or some WSL/PowerShell invocations, stdin isn't a TTY and
 	// bubbletea gets immediate EOF and quits cleanly — which looks like the
 	// TUI "flashing and exiting." Detect that up front and explain, rather
 	// than silently dropping back to the shell.
-	if !useTTY() {
+	if !agent.UseTTY() {
 		fmt.Println("tui: no interactive terminal detected (stdin is not a TTY).")
 		fmt.Println("     bubbletea needs a real terminal; that's why the TUI flashed and exited.")
 		fmt.Println("     Options:")
@@ -430,11 +429,11 @@ func runTUI(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Mes
 		fmt.Println("       • use -headless and drive entirely from the web dashboard")
 		return
 	}
-	stdoutSub.silent = true // the TUI owns the screen
+	agent.SilenceStdout(true) // the TUI owns the screen
 
 	var prog *tea.Program
 	// forward every bus event into the tea loop
-	unsub := bus.Subscribe(SubscriberFunc(func(e Event) {
+	unsub := core.Bus.Subscribe(core.SubscriberFunc(func(e core.Event) {
 		if prog != nil {
 			prog.Send(busMsg(e))
 		}
@@ -442,50 +441,50 @@ func runTUI(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Mes
 	defer unsub()
 
 	submit := func(text string) {
-		messages = append(messages, Message{Role: "user", Content: text})
+		messages = append(messages, core.Message{Role: "user", Content: text})
 		defer func() {
 			if r := recover(); r != nil {
 				prog.Send(turnErrMsg{err: "panic in turn"})
 			}
 		}()
-		messages = runTurn(baseURL, model, sb, st, messages)
+		messages = agent.RunTurn(baseURL, model, sb, st, messages)
 		st.Append(messages)
 		prog.Send(turnDoneMsg{})
 	}
 
 	m := newTUIModel(submit)
 	m.onShell = func(cmd string) {
-		out, code, err := execShell(cmd, sb.Root, true)
+		out, code, err := agent.ExecShell(cmd, sb.Root, true)
 		detail := ""
 		if err != nil {
 			detail = err.Error()
 		}
-		emitLine(tail(out, 4096))
-		messages = append(messages, Message{
+		core.EmitLine(agent.Tail(out, 4096))
+		messages = append(messages, core.Message{
 			Role:    "user",
-			Content: "[shell] $ " + cmd + " (exit " + strconv.Itoa(code) + detail + ")\n" + tail(out, 8192),
+			Content: "[shell] $ " + cmd + " (exit " + strconv.Itoa(code) + detail + ")\n" + agent.Tail(out, 8192),
 		})
 		st.Append(messages)
 	}
 	m.onFile = func(path string) {
 		data, err := os.ReadFile(path)
 		if err != nil {
-			emitError("  @ cannot read " + path + ": " + err.Error())
+			core.EmitError("  @ cannot read " + path + ": " + err.Error())
 			return
 		}
-		messages = append(messages, Message{
+		messages = append(messages, core.Message{
 			Role:    "user",
 			Content: "[attached " + path + "]\n" + string(data),
 		})
 		st.Append(messages)
-		emitLine("  @ attached " + path + " (" + strconv.Itoa(len(data)) + " bytes)")
+		core.EmitLine("  @ attached " + path + " (" + strconv.Itoa(len(data)) + " bytes)")
 	}
 	m.onCommand = func(cmd string) {
-		if out, handled := runInfoCommand(cmd, baseURL, model, messages, st); handled {
-			emitLine(strings.TrimRight(out, "\n"))
+		if out, handled := agent.RunInfoCommand(cmd, baseURL, model, messages, st); handled {
+			core.EmitLine(strings.TrimRight(out, "\n"))
 			return
 		}
-		emitStatus("  " + cmd + " — stateful commands (/plan, /commit, /reload, …) run in the REPL for now")
+		core.EmitStatus("  " + cmd + " — stateful commands (/plan, /commit, /reload, …) run in the REPL for now")
 	}
 	// periodic rail refresh (todos/stats) via a ticker command
 	prog = tea.NewProgram(m, tea.WithAltScreen())
@@ -500,7 +499,7 @@ func runTUI(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Mes
 			select {
 			case <-stopWatch:
 				return
-			case text := <-browserSubmissions:
+			case text := <-core.BrowserSubmissions:
 				if prog != nil {
 					prog.Send(browserPromptMsg{text: text})
 				}
@@ -509,8 +508,8 @@ func runTUI(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Mes
 	}()
 	defer close(stopWatch)
 	if _, err := prog.Run(); err != nil {
-		stdoutSub.silent = false
-		emitError("tui: " + err.Error())
+		agent.SilenceStdout(false)
+		core.EmitError("tui: " + err.Error())
 	}
-	stdoutSub.silent = false
+	agent.SilenceStdout(false)
 }

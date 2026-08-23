@@ -15,9 +15,10 @@
 //
 // The keybindings are wired in tui.go's Update; this file is the testable
 // core so the behavior is verified even though the live feel isn't.
-package agent
+package tui
 
 import (
+	"github.com/davasorus/computah/internal/agent"
 	"os"
 	"path/filepath"
 	"strings"
@@ -92,36 +93,7 @@ func (h *tuiHistory) resetRecall() { h.idx = len(h.entries) }
 // tuiComplete applies tab completion to (line, pos), reusing the REPL's
 // completeLine. Returns the new line, new cursor pos, and whether it changed.
 func tuiComplete(line string, pos int) (string, int, bool) {
-	return completeLine(line, pos, '\t')
-}
-
-// inputKind classifies a submitted line so the TUI's Update can route it the
-// same way the REPL does.
-type inputKind int
-
-const (
-	inputPrompt  inputKind = iota // normal message to the model
-	inputShell                    // !cmd — run directly
-	inputFile                     // @path — attach a file
-	inputCommand                  // /cmd — slash command
-	inputBlank                    // empty
-)
-
-// classifyInput determines how a submitted line should be handled.
-func classifyInput(line string) (inputKind, string) {
-	t := strings.TrimSpace(line)
-	switch {
-	case t == "":
-		return inputBlank, ""
-	case strings.HasPrefix(t, "!"):
-		return inputShell, strings.TrimSpace(t[1:])
-	case strings.HasPrefix(t, "@"):
-		return inputFile, strings.TrimSpace(t[1:])
-	case strings.HasPrefix(t, "/"):
-		return inputCommand, t
-	default:
-		return inputPrompt, line
-	}
+	return agent.CompleteLine(line, pos, '\t')
 }
 
 // isMultilineToggle reports whether a line is the """ multi-line delimiter.

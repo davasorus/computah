@@ -552,7 +552,7 @@ func (st *SessionStore) resolveSession(arg string) (string, error) {
 // summary. The full transcript remains on disk in the rotated-out file.
 // This resets the KV-cache prefix — the first request after a compact
 // reprocesses from scratch, which is the one-time price of a small context.
-func compact(baseURL, model string, messages []Message, st *SessionStore) []Message {
+func Compact(baseURL, model string, messages []Message, st *SessionStore) []Message {
 	if len(messages) <= 1 {
 		fmt.Println("(nothing to compact yet)")
 		return messages
