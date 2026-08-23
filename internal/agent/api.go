@@ -85,6 +85,21 @@ func toolDef(name, desc string, props map[string]any, required []string) map[str
 
 // ---------- Chat plumbing (streaming) ----------
 
+// apiKey is an optional Bearer token for authenticated OpenAI-compatible
+// endpoints (cloud OpenAI, a proxied Anthropic, an authenticated gateway).
+// Empty for local servers like LM Studio/Ollama, which need no auth — the
+// zero-config local default is preserved. Resolved at startup from config
+// "api_key" or the COMPUTAH_API_KEY env var (env wins).
+var apiKey string
+
+// setAuth adds the Bearer header when an API key is configured. A no-op for
+// local servers, so unauthenticated endpoints see no new header.
+func setAuth(req *http.Request) {
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+}
+
 // Generous timeout: a local model on Vulkan can legitimately take minutes
 // on a long generation; don't let the client be the thing that gives up.
 var httpClient = &http.Client{Timeout: 15 * time.Minute}
@@ -114,6 +129,7 @@ func chat(ctx context.Context, baseURL, model string, messages []Message, onToke
 		return Message{}, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	setAuth(httpReq)
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
 		return Message{}, err
@@ -329,7 +345,7 @@ func parseSSE(r io.Reader, onToken func(string)) (Message, string, reasoningStat
 // that doesn't look like an embedding model — the sane default when no
 // -model flag or config entry names one.
 func firstModel(baseURL string) (string, error) {
-	resp, err := httpClient.Get(baseURL + "/v1/models")
+	resp, err := getWithAuth(baseURL + "/v1/models")
 	if err != nil {
 		return "", err
 	}
@@ -354,9 +370,20 @@ func firstModel(baseURL string) (string, error) {
 	return "", fmt.Errorf("only embedding models loaded — load a chat model in LM Studio")
 }
 
+// getWithAuth issues a GET with the Bearer header attached when configured,
+// so model discovery works against authenticated endpoints too.
+func getWithAuth(url string) (*http.Response, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	setAuth(req)
+	return httpClient.Do(req)
+}
+
 // listModels returns every model id the server offers (for /model).
 func listModels(baseURL string) ([]string, error) {
-	resp, err := httpClient.Get(baseURL + "/v1/models")
+	resp, err := getWithAuth(baseURL + "/v1/models")
 	if err != nil {
 		return nil, err
 	}

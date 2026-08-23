@@ -3,11 +3,12 @@
 [![CI](https://github.com/davasorus/computah/actions/workflows/ci.yml/badge.svg)](https://github.com/davasorus/computah/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-A self-hosted, terminal-based AI coding agent in Go. It runs against a local
-OpenAI-compatible model server (e.g. [LM Studio](https://lmstudio.ai/)) — no
-cloud, no API keys. It reads and edits code in a working directory, runs
-commands with approval, keeps resumable sessions, and extends itself with MCP
-tool servers.
+A self-hosted, terminal-based AI coding agent in Go. It runs against any
+OpenAI-compatible model server — a local one like [LM Studio](https://lmstudio.ai/)
+or [Ollama](https://ollama.com/) with no key required, or an authenticated
+cloud/gateway endpoint via an API key. It reads and edits code in a working
+directory, runs commands with approval, keeps resumable sessions, and extends
+itself with MCP tool servers.
 
 ## Install
 
@@ -38,6 +39,11 @@ computah version
 |------|---------|
 | `--url` | Base URL of the OpenAI-compatible server (default: auto-detect / config) |
 | `--model` | Model id (default: first chat model on the server / config) |
+
+An optional API key for authenticated endpoints (cloud OpenAI, a proxied
+gateway) is read from `api_key` in the config file or the `COMPUTAH_API_KEY`
+env var; it's sent as a `Bearer` token. Local servers need no key — leave it
+unset.
 
 Values resolve **flag → `COMPUTAH_*` env → config file → auto-detect**.
 

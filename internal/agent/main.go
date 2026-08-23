@@ -253,6 +253,7 @@ func isWSL() bool {
 // launch. Command-line flags always override the file. Every field optional.
 type Config struct {
 	URL               string                     `json:"url,omitempty"`
+	APIKey            string                     `json:"api_key,omitempty"` // Bearer token for authenticated endpoints (cloud/proxied OpenAI-compatible); empty for local servers
 	Model             string                     `json:"model,omitempty"`
 	CompactTokens     int                        `json:"compact_tokens,omitempty"`
 	CommandTimeoutSec int                        `json:"command_timeout_sec,omitempty"`   // run_command limit (default 300)
@@ -439,6 +440,14 @@ func Run(opts Options) int {
 		model = m
 	}
 	curBaseURL, curModel = baseURL, model
+
+	// API key for authenticated endpoints: config "api_key", overridable by
+	// COMPUTAH_API_KEY (env wins, matching the url/model precedence). Empty
+	// for local servers — no auth header is sent.
+	apiKey = cfg.APIKey
+	if v := os.Getenv("COMPUTAH_API_KEY"); v != "" {
+		apiKey = v
+	}
 
 	// Working directory: first positional arg, else cwd.
 	root, _ := os.Getwd()
