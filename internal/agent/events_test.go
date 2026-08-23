@@ -1,13 +1,14 @@
 package agent
 
 import (
+	"github.com/davasorus/computah/internal/core"
 	"strings"
 	"sync"
 	"testing"
 )
 
 func TestEventBusDeliversToSubscribers(t *testing.T) {
-	b := &eventBus{}
+	b := core.NewBus()
 	var mu sync.Mutex
 	var got []Event
 	unsub := b.Subscribe(SubscriberFunc(func(e Event) {
@@ -35,7 +36,7 @@ func TestEventBusDeliversToSubscribers(t *testing.T) {
 }
 
 func TestEventBusMultipleSubscribers(t *testing.T) {
-	b := &eventBus{}
+	b := core.NewBus()
 	var a, c int
 	b.Subscribe(SubscriberFunc(func(Event) { a++ }))
 	b.Subscribe(SubscriberFunc(func(Event) { c++ }))
