@@ -1122,14 +1122,23 @@ func (s *Sandbox) toolFetchURL(a toolArgs) string {
 func ExecShell(cmdStr, dir string, live bool) (string, int, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), commandTimeout)
 	defer cancel()
+	// Defense-in-depth backstop: block a small set of catastrophic,
+	// irreversible commands (rm -rf /, fork bombs, disk-format/dd, curl|sh)
+	// even if they somehow reach here. This is NOT the primary control —
+	// that's the human approval gate in toolRunCommand — but it guards against
+	// a destructive mistake slipping through.
+	if err := core.VetCommand(cmdStr); err != nil {
+		return "", -1, err
+	}
 	// Running a model-proposed shell command is the core, intended function of
-	// this agent — it cannot be "sanitized" without removing the feature. The
-	// security control is the human-in-the-loop approval gate in
-	// toolRunCommand (mutating commands are declined by default and require
-	// explicit y/always, plus a pre_command hook), not input escaping. This
-	// flow is only reached after that gate. CodeQL's command-injection rule is
-	// suppressed here as reviewed and safe-by-design.
-	cmd := exec.CommandContext(ctx, "bash", "-lc", cmdStr) // #nosec G204 -- gated by user approval in toolRunCommand
+	// this agent. It deliberately uses `bash -lc` so real dev workflows (pipes,
+	// redirects, env) work. The security controls are (1) the approval gate in
+	// toolRunCommand — mutating commands are declined by default and require
+	// explicit y/always plus an optional pre_command hook — and (2) VetCommand
+	// above. Static analysers flag this exec as command-injection because a
+	// dynamic string reaches the shell; that is inherent to a command-running
+	// agent and is accepted per SECURITY.md.
+	cmd := exec.CommandContext(ctx, "bash", "-lc", cmdStr)
 	cmd.Dir = dir
 	setProcessGroup(cmd)            // platform-specific: kill the whole process tree on cancel
 	cmd.WaitDelay = 5 * time.Second // don't block forever on inherited pipes
