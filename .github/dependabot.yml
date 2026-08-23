@@ -1,11 +1,102 @@
-# To get started with Dependabot version updates, you'll need to specify which
-# package ecosystems to update and where the package manifests are located.
-# Please see the documentation for all configuration options:
-# https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
-
+# Dependabot coverage for engram's full dependency surface:
+#   - Go modules (go.mod)
+#   - GitHub Actions (workflow `uses:`)
+#   - Dockerfile base images (digest + tag updates — FROMs are digest-pinned)
+#   - compose/compose.yml service images (pgvector)
+#   - npm manifest for vendored web assets (htmx, alpine)
+#
+# NOT covered by dependabot (no ecosystem for raw k8s manifests):
+#   - kube/engram.yaml — its pgvector image must be kept in sync with
+#     compose/compose.yml by hand when a compose PR lands.
+#   - `with: version:` pins inside workflow steps (e.g. the golangci-lint
+#     binary version) — dependabot bumps the *action* ref only.
+#   - the `go` directive in go.mod (toolchain) — tracked via the golang
+#     builder image bump in the Dockerfile instead.
+#
+# Security updates ignore these schedules and open PRs immediately
+# (requires Dependabot alerts + security updates enabled in repo settings).
 version: 2
 updates:
-  - package-ecosystem: "GOMOD" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  - package-ecosystem: gomod
+    directory: /
     schedule:
-      interval: "daily"
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Detroit
+    # Let brand-new releases soak before PRing them (supply-chain hygiene).
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      # Batch the routine stuff; majors arrive as individual PRs so a
+      # pgx v6-style breaking bump never hides inside a batch.
+      go-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["deps", "go"]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Detroit
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      actions-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["deps", "ci"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Detroit
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    labels: ["deps", "docker"]
+
+  # Vendored web assets (htmx, alpine) — package.json is the version
+  # manifest; internal/web/static holds the actual embedded files. After a
+  # bump PR: `npm ci && npm run assets`, commit the refreshed static files
+  # (CI's drift check enforces this).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Detroit
+    cooldown:
+      default-days: 5
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    groups:
+      npm-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+    labels: ["deps", "web"]
+
+  # Service images in the compose stack (pgvector/pgvector:pg16).
+  - package-ecosystem: docker-compose
+    directory: /compose
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: America/Detroit
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    labels: ["deps", "docker"]
