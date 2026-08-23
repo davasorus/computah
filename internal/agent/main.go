@@ -79,7 +79,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/davasorus/computah/internal/core"
@@ -985,7 +984,7 @@ func handleReload(baseURL, model, root string) {
 	}
 	args := []string{"go", "run", ".", "-url", baseURL, "-model", model, "-resume", "latest", root}
 	fmt.Println("reloading — resuming this session in the new build…")
-	if err := syscall.Exec(goBin, args, os.Environ()); err != nil {
+	if err := execReplace(goBin, args, os.Environ()); err != nil {
 		fmt.Println("reload: exec failed:", err)
 	}
 }

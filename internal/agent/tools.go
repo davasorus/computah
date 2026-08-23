@@ -13,7 +13,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -1122,10 +1121,7 @@ func ExecShell(cmdStr, dir string, live bool) (string, int, error) {
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "bash", "-lc", cmdStr)
 	cmd.Dir = dir
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Cancel = func() error {
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL) // negative pid = whole group
-	}
+	setProcessGroup(cmd)            // platform-specific: kill the whole process tree on cancel
 	cmd.WaitDelay = 5 * time.Second // don't block forever on inherited pipes
 	var buf bytes.Buffer
 	if live && useColor {

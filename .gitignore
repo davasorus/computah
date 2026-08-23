@@ -10,3 +10,8 @@
 
 # local agent state that may live in-repo during dev
 *.log
+
+.git
+compose/.env
+*.md
+/dist
