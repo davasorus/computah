@@ -1091,12 +1091,22 @@ func handleDiff(sb *Sandbox, arg string) {
 		}
 	}
 	for p := range paths {
-		oldData, err := os.ReadFile(p + ".bak")
+		safeCur, err := core.ConfinePath(sb.Root, p)
+		if err != nil {
+			fmt.Printf("diff: %s: %v\n", p, err)
+			continue
+		}
+		safeBak, err := core.ConfinePath(sb.Root, p+".bak")
+		if err != nil {
+			fmt.Printf("diff: %s.bak: %v\n", p, err)
+			continue
+		}
+		oldData, err := os.ReadFile(safeBak)
 		if err != nil {
 			// New file this session: everything is an addition.
 			oldData = nil
 		}
-		curData, err := os.ReadFile(p)
+		curData, err := os.ReadFile(safeCur)
 		if err != nil {
 			fmt.Printf("diff: %s: %v\n", p, err)
 			continue
