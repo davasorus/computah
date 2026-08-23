@@ -7,6 +7,16 @@ import (
 	"strings"
 )
 
+// reverse returns a new slice with the elements of s in reverse order. Used
+// to reassemble a not-yet-existing path suffix that was collected bottom-up.
+func reverse(s []string) []string {
+	out := make([]string, len(s))
+	for i, v := range s {
+		out[len(s)-1-i] = v
+	}
+	return out
+}
+
 // ConfinePath resolves p (relative to base if not absolute) and verifies the
 // result stays within base. It returns the cleaned absolute path, or an error
 // if the path escapes base via "..", symlink-style tricks, or an absolute path
@@ -42,12 +52,31 @@ func ConfinePath(base, p string) (string, error) {
 		if !os.IsNotExist(err) {
 			return "", fmt.Errorf("resolve target symlinks: %w", err)
 		}
-		parent := filepath.Dir(candidate)
-		canonParent, perr := filepath.EvalSymlinks(parent)
-		if perr != nil {
-			return "", fmt.Errorf("resolve parent symlinks: %w", perr)
+		// The target doesn't exist yet (e.g. creating a new file, possibly in
+		// new subdirectories). Walk up to the nearest EXISTING ancestor,
+		// resolve symlinks there, then re-append the not-yet-created suffix.
+		// Collecting every missing component (not just the immediate parent)
+		// handles creating a file several directories deep in one shot.
+		missing := []string{} // missing components, collected deepest-first
+		cur := candidate
+		for {
+			parent := filepath.Dir(cur)
+			if parent == cur {
+				canonTarget = candidate // hit root without an existing ancestor
+				break
+			}
+			missing = append(missing, filepath.Base(cur)) // record this level
+			if canonParent, perr := filepath.EvalSymlinks(parent); perr == nil {
+				// parent exists: target = canonParent + missing (reversed to
+				// top-down order).
+				parts := append([]string{canonParent}, reverse(missing)...)
+				canonTarget = filepath.Join(parts...)
+				break
+			} else if !os.IsNotExist(perr) {
+				return "", fmt.Errorf("resolve parent symlinks: %w", perr)
+			}
+			cur = parent // parent also missing; keep climbing
 		}
-		canonTarget = filepath.Join(canonParent, filepath.Base(candidate))
 	}
 
 	rel, err := filepath.Rel(canonBase, canonTarget)
