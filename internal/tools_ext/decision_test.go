@@ -1,6 +1,7 @@
-package agent
+package toolsext
 
 import (
+	"github.com/davasorus/computah/internal/agent"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,11 +10,11 @@ import (
 
 func TestRecordDecisionWritesFrontmatter(t *testing.T) {
 	v := setupVault(t)
-	registerDecisionTool()
-	defer delete(toolByName, "record_decision")
+	RegisterDecisionTool()
+	defer agent.DeleteTool("record_decision")
 
-	sb := &Sandbox{Root: t.TempDir()}
-	out := toolRecordDecision(sb, toolArgs{
+	sb := &agent.Sandbox{Root: t.TempDir()}
+	out := toolRecordDecision(sb, agent.ToolArgs{
 		"title":   "Why PromoteIS needs GUID convergence",
 		"type":    "rca",
 		"project": "ims-promote",
@@ -44,17 +45,17 @@ func TestRecordDecisionWritesFrontmatter(t *testing.T) {
 
 func TestRecordDecisionDefaultsAndValidation(t *testing.T) {
 	setupVault(t)
-	sb := &Sandbox{Root: t.TempDir()}
+	sb := &agent.Sandbox{Root: t.TempDir()}
 	// missing body → error
-	if out := toolRecordDecision(sb, toolArgs{"title": "x"}); !strings.HasPrefix(out, "ERROR") {
+	if out := toolRecordDecision(sb, agent.ToolArgs{"title": "x"}); !strings.HasPrefix(out, "ERROR") {
 		t.Fatal("missing body should error")
 	}
 	// bad type → error
-	if out := toolRecordDecision(sb, toolArgs{"title": "x", "body": "y", "type": "bogus"}); !strings.HasPrefix(out, "ERROR") {
+	if out := toolRecordDecision(sb, agent.ToolArgs{"title": "x", "body": "y", "type": "bogus"}); !strings.HasPrefix(out, "ERROR") {
 		t.Fatal("bad type should error")
 	}
 	// default type = decision
-	out := toolRecordDecision(sb, toolArgs{"title": "defaulted", "body": "b"})
+	out := toolRecordDecision(sb, agent.ToolArgs{"title": "defaulted", "body": "b"})
 	if strings.HasPrefix(out, "ERROR") {
 		t.Fatalf("valid minimal call errored: %s", out)
 	}
@@ -77,19 +78,16 @@ func TestSlug(t *testing.T) {
 func TestRecordDecisionSurvivesMCPDedup(t *testing.T) {
 	// record_decision must NOT be removed by the file-layer vault dedup
 	// (it's not one of the three suppressed names).
-	savedReg, savedIdx := registry, toolByName
-	registry = []Tool{
-		{Name: "vault_search"}, {Name: "vault_read"}, {Name: "vault_note"},
-		{Name: "record_decision"},
-	}
-	toolByName = map[string]Tool{}
-	for _, tl := range registry {
-		toolByName[tl.Name] = tl
-	}
-	defer func() { registry, toolByName = savedReg, savedIdx }()
+	saved := agent.SnapshotRegistry()
+	agent.ResetRegistry()
+	agent.RegisterTools(
+		agent.Tool{Name: "vault_search"}, agent.Tool{Name: "vault_read"}, agent.Tool{Name: "vault_note"},
+		agent.Tool{Name: "record_decision"},
+	)
+	defer agent.RestoreRegistry(saved)
 
-	unregisterTools("vault_search", "vault_read", "vault_note")
-	if _, ok := toolByName["record_decision"]; !ok {
+	agent.UnregisterTools("vault_search", "vault_read", "vault_note")
+	if _, ok := agent.LookupTool("record_decision"); !ok {
 		t.Fatal("record_decision must survive the vault dedup")
 	}
 }

@@ -1,8 +1,9 @@
-package agent
+package toolsext
 
 import (
-	"encoding/json"
 	"fmt"
+	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/core"
 	"os"
 	"path/filepath"
 	"strings"
@@ -64,11 +65,11 @@ func TestVaultIndexIncremental(t *testing.T) {
 	t.Setenv("HOME", home)
 	v := setupVault(t) // from vault_test.go: two real notes
 	_ = v
-	oldEmbed, oldModel := embedFn, embedModel
+	oldEmbed, oldModel := embedFn, core.EmbedModel
 	calls := 0
 	embedFn = stubEmbedder(&calls)
-	embedModel = "stub-model"
-	defer func() { embedFn, embedModel = oldEmbed, oldModel }()
+	core.EmbedModel = "stub-model"
+	defer func() { embedFn, core.EmbedModel = oldEmbed, oldModel }()
 
 	idx, err := ensureVaultIndex()
 	if err != nil {
@@ -88,7 +89,7 @@ func TestVaultIndexIncremental(t *testing.T) {
 	}
 
 	// Touch one note: only it re-embeds.
-	p := filepath.Join(vaultPath, "GovCloud Networking.md")
+	p := filepath.Join(core.VaultPath, "GovCloud Networking.md")
 	os.WriteFile(p, []byte("# GovCloud Networking\n\nENI subnet assignment, updated.\n"), 0o644)
 	now := time.Now().Add(2 * time.Second)
 	os.Chtimes(p, now, now)
@@ -110,11 +111,11 @@ func TestSemanticHitsAndHybridSearch(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	setupVault(t)
-	oldEmbed, oldModel := embedFn, embedModel
+	oldEmbed, oldModel := embedFn, core.EmbedModel
 	calls := 0
 	embedFn = stubEmbedder(&calls)
-	embedModel = "stub-model"
-	defer func() { embedFn, embedModel = oldEmbed, oldModel }()
+	core.EmbedModel = "stub-model"
+	defer func() { embedFn, core.EmbedModel = oldEmbed, oldModel }()
 
 	hits, err := semanticVaultHits("that cluster ip problem", 3)
 	if err != nil {
@@ -125,38 +126,13 @@ func TestSemanticHitsAndHybridSearch(t *testing.T) {
 	}
 
 	// Hybrid: a query with no keyword match still returns the semantic section.
-	sb := &Sandbox{Root: t.TempDir()}
-	out := sb.toolVaultSearch(toolArgs{"query": "cluster ip trouble"})
+	sb := &agent.Sandbox{Root: t.TempDir()}
+	out := toolVaultSearch(sb, agent.ToolArgs{"query": "cluster ip trouble"})
 	if !strings.Contains(out, "Related by meaning") || !strings.Contains(out, "SQL AG Setup") {
 		t.Fatalf("hybrid search missing semantic section:\n%s", out)
 	}
 	if !strings.Contains(out, "no keyword matches") {
 		t.Fatalf("keyword miss must be labeled:\n%s", out)
-	}
-}
-
-func TestEffortSelection(t *testing.T) {
-	oldR, oldP, oldPlan := reasoningEffort, planReasoningEffort, planMode
-	defer func() { reasoningEffort, planReasoningEffort, planMode = oldR, oldP, oldPlan }()
-	reasoningEffort, planReasoningEffort = "low", "high"
-	planMode = false
-	if currentReasoningEffort() != "low" {
-		t.Fatal("normal turns use the base effort")
-	}
-	planMode = true
-	if currentReasoningEffort() != "high" {
-		t.Fatal("plan mode uses its own effort")
-	}
-	planReasoningEffort = ""
-	if currentReasoningEffort() != "low" {
-		t.Fatal("plan effort unset falls back to base")
-	}
-	reasoningEffort = ""
-	planMode = false
-	req := ChatRequest{Model: "m", ReasoningEffort: currentReasoningEffort()}
-	data, _ := json.Marshal(req)
-	if strings.Contains(string(data), "reasoning_effort") {
-		t.Fatalf("unset effort must omit the field entirely: %s", data)
 	}
 }
 
@@ -192,14 +168,14 @@ func TestCodeSearchEndToEnd(t *testing.T) {
 	os.WriteFile(filepath.Join(root, "db.go"), []byte("package db\n\n// connect retries with cluster failover and subnet checks\nfunc connect() {}\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "bake.go"), []byte("package bake\n\n// recipe for bread\nfunc bake() {}\n"), 0o644)
 	os.WriteFile(filepath.Join(root, "node_modules", "junk.js"), []byte("cluster cluster cluster"), 0o644)
-	oldEmbed, oldModel := embedFn, embedModel
+	oldEmbed, oldModel := embedFn, core.EmbedModel
 	calls := 0
 	embedFn = stubEmbedder(&calls)
-	embedModel = "stub-model"
-	defer func() { embedFn, embedModel = oldEmbed, oldModel }()
+	core.EmbedModel = "stub-model"
+	defer func() { embedFn, core.EmbedModel = oldEmbed, oldModel }()
 
-	sb := &Sandbox{Root: root}
-	out := toolCodeSearch(sb, toolArgs{"query": "cluster ip problem handling"})
+	sb := &agent.Sandbox{Root: root}
+	out := toolCodeSearch(sb, agent.ToolArgs{"query": "cluster ip problem handling"})
 	if !strings.Contains(out, "db.go:") {
 		t.Fatalf("semantic hit must name db.go with a line: %s", out)
 	}
@@ -207,7 +183,7 @@ func TestCodeSearchEndToEnd(t *testing.T) {
 		t.Fatalf("skip dirs must be excluded: %s", out)
 	}
 	firstCalls := calls
-	_ = toolCodeSearch(sb, toolArgs{"query": "cluster again"})
+	_ = toolCodeSearch(sb, agent.ToolArgs{"query": "cluster again"})
 	if calls != firstCalls+1 { // only the query embedding, no re-index
 		t.Fatalf("unchanged workdir must not re-embed: %d extra calls", calls-firstCalls)
 	}

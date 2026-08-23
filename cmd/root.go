@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/davasorus/computah/internal/agent"
+	toolsext "github.com/davasorus/computah/internal/tools_ext"
 	"github.com/davasorus/computah/internal/tui"
 	"github.com/davasorus/computah/internal/web"
 )
@@ -51,6 +52,15 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
+
+	// Wire the out-of-engine tool packages into the engine's registration
+	// hook so they load at startup without the engine importing them.
+	agent.ToolRegistrations = append(agent.ToolRegistrations,
+		toolsext.RegisterDecisionTool,
+		toolsext.RegisterEmbedTools,
+		toolsext.RegisterStructuredTools,
+		toolsext.RegisterVaultTools,
+	)
 
 	// Persistent flags available to every subcommand. Bound to Viper so a
 	// config file or COMPUTAH_* env var can supply them too.

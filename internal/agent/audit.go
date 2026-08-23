@@ -14,6 +14,7 @@ package agent
 
 import (
 	"fmt"
+	"github.com/davasorus/computah/internal/core"
 	"os"
 	"path/filepath"
 	"sort"
@@ -63,7 +64,7 @@ func recordActivity(tool string, args map[string]any, result string) {
 // writeAuditNote emits the structured audit note. Best-effort like the
 // journal: never blocks exit, never errors loudly.
 func writeAuditNote(workdir, title string, sb *Sandbox) {
-	if vaultPath == "" || !auditEnabled {
+	if core.VaultPath == "" || !auditEnabled {
 		return
 	}
 	activity.Lock()
@@ -76,7 +77,7 @@ func writeAuditNote(workdir, title string, sb *Sandbox) {
 		return // nothing happened; no note
 	}
 
-	dir := filepath.Join(vaultPath, vaultAgentDir, "audit")
+	dir := filepath.Join(core.VaultPath, core.VaultAgentDir, "audit")
 	if os.MkdirAll(dir, 0o755) != nil {
 		return
 	}
@@ -97,7 +98,7 @@ func writeAuditNote(workdir, title string, sb *Sandbox) {
 	fmt.Fprintf(&b, "time: %s\n", now.Format("15:04"))
 	fmt.Fprintf(&b, "model: %s\n", curModel)
 	fmt.Fprintf(&b, "tool_calls: %d\n", total)
-	fmt.Fprintf(&b, "files_modified: %d\n", len(dedup(relPaths(sb.Root, sb.Modified))))
+	fmt.Fprintf(&b, "files_modified: %d\n", len(core.Dedup(core.RelPaths(sb.Root, sb.Modified))))
 	fmt.Fprintf(&b, "errors: %d\n", activity.errors)
 	fmt.Fprintf(&b, "duration_min: %d\n", int(dur.Minutes()))
 	b.WriteString("tags: [agent-audit]\n")
@@ -123,7 +124,7 @@ func writeAuditNote(workdir, title string, sb *Sandbox) {
 		fmt.Fprintf(&b, "- %s ×%d\n", t.name, t.n)
 	}
 
-	if mods := dedup(relPaths(sb.Root, sb.Modified)); len(mods) > 0 {
+	if mods := core.Dedup(core.RelPaths(sb.Root, sb.Modified)); len(mods) > 0 {
 		b.WriteString("\n## Files modified\n")
 		for _, m := range mods {
 			fmt.Fprintf(&b, "- `%s`\n", m)
@@ -131,7 +132,7 @@ func writeAuditNote(workdir, title string, sb *Sandbox) {
 	}
 	if len(activity.vaultNotes) > 0 {
 		b.WriteString("\n## Vault notes touched\n")
-		for _, n := range dedup(activity.vaultNotes) {
+		for _, n := range core.Dedup(activity.vaultNotes) {
 			fmt.Fprintf(&b, "- %s\n", n)
 		}
 	}
@@ -145,6 +146,6 @@ func writeAuditNote(workdir, title string, sb *Sandbox) {
 	fname := fmt.Sprintf("%s-%s-%s.md", now.Format("2006-01-02-150405"), project, "audit")
 	p := filepath.Join(dir, fname)
 	if os.WriteFile(p, []byte(b.String()), 0o644) == nil {
-		fmt.Printf("audit note written to vault: %s\n", filepath.Join(vaultAgentDir, "audit", fname))
+		fmt.Printf("audit note written to vault: %s\n", filepath.Join(core.VaultAgentDir, "audit", fname))
 	}
 }

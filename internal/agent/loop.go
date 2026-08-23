@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/davasorus/computah/internal/core"
 	"github.com/davasorus/computah/internal/md"
 	"math/rand"
 	"os"
@@ -533,7 +534,7 @@ func RunVerifyLoop(baseURL, model string, sb *Sandbox, st *SessionStore, message
 		// file:line assertions, or the compiler error lines) instead of a
 		// wall of output; the raw tail follows as backup.
 		feedback := fmt.Sprintf("[verify] `%s` failed (%s).", verifyCommand, detail)
-		if parsed := parseTestFailures(out); parsed != "" {
+		if parsed := core.ParseTestFailures(out); parsed != "" {
 			feedback += "\n" + parsed + "\nFull output tail:\n" + tail(out, 2048)
 		} else {
 			feedback += " Output tail:\n" + tail(out, 4096)

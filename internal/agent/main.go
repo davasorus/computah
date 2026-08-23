@@ -156,7 +156,7 @@ func buildSystemPrompt(root string) string {
 		"a verify command may run automatically after turns that modify files, feeding failures back to you; edit results include a diff — read it. " +
 		"Slash commands (/plan, /commit, /rewind, …) are USER commands: you cannot invoke them; never claim to have run one. " +
 		"Repeating an identical read-only call is refused — reuse earlier results instead."
-	if vaultPath != "" {
+	if core.VaultPath != "" {
 		s += "\n\nThe user's Obsidian knowledge vault is available: vault_search finds notes by content, " +
 			"vault_read fetches one by name (follow its [[wikilinks]] when relevant), and vault_note records " +
 			"durable decisions and runbooks into the vault's agent/ folder. Consult it when the user references " +
@@ -172,7 +172,7 @@ func buildSystemPrompt(root string) string {
 		"a verify command may run automatically after turns that modify files, feeding failures back to you; edit results include a diff — read it. " +
 		"Slash commands (/plan, /commit, /rewind, …) are USER commands: you cannot invoke them; never claim to have run one. " +
 		"Repeating an identical read-only call is refused — reuse earlier results instead."
-	if vaultPath != "" {
+	if core.VaultPath != "" {
 		s += "\n\nThe user's Obsidian knowledge vault is available: vault_search finds notes by content, " +
 			"vault_read fetches one by name (follow its [[wikilinks]] when relevant), and vault_note records " +
 			"durable decisions and runbooks into the vault's agent/ folder. Consult it when the user references " +
@@ -454,11 +454,9 @@ func Run(opts Options) int {
 	loadCustomCommands(root)            // /<name> templates from .agent/commands/
 	loadAgentRoles(root)                // spawn_task roles from .agent/agents/
 	auxModel = cfg.AuxModel             // housekeeping model (compact/titles/commits)
-	vaultPath = cfg.VaultPath
-	registerVaultTools()      // Obsidian knowledge base (no-op when unconfigured)
-	registerDecisionTool()    // record_decision: structured note writer (survives MCP dedup)
-	registerEmbedTools()      // code_search (no-op without embed_model)
-	registerStructuredTools() // edit_files, rename_symbol, go_diagnostics
+	core.VaultPath = cfg.VaultPath
+	core.EmbedModel = cfg.EmbedModel
+	runToolRegistrations() // decision/structured/embed tools, wired via cmd
 
 	// External MCP tool servers from config: each one's tools join the
 	// registry alongside the built-ins. Failures warn and continue — the

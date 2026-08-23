@@ -13,22 +13,24 @@
 // whether or not the MCP vault server is connected — and it is NOT a
 // duplicate of any MCP tool (nothing in the Obsidian MCP suite encodes this
 // convention), so it survives the file-layer dedup.
-package agent
+package toolsext
 
 import (
 	"fmt"
+	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/core"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 )
 
-// registerDecisionTool adds record_decision when a vault is configured.
-func registerDecisionTool() {
-	if vaultPath == "" {
+// RegisterDecisionTool adds record_decision when a vault is configured.
+func RegisterDecisionTool() {
+	if core.VaultPath == "" {
 		return
 	}
-	registerTools(Tool{
+	agent.RegisterTools(agent.Tool{
 		Name: "record_decision",
 		Desc: "Record a durable decision, gotcha, architecture note, or RCA into the knowledge vault as a structured, queryable note. Use when finishing significant work whose conclusion should outlive this session. Supply the content; the tool handles filing and frontmatter. Prefer this over vault_write for decisions — it enforces the team convention.",
 		Props: map[string]any{
@@ -41,15 +43,15 @@ func registerDecisionTool() {
 		Required: []string{"title", "type", "body"},
 		Handler:  toolRecordDecision,
 	})
-	buildToolSchemas()
+	agent.RebuildToolSchemas()
 }
 
-func toolRecordDecision(s *Sandbox, a toolArgs) string {
-	title := strings.TrimSpace(a.str("title"))
-	noteType := strings.TrimSpace(a.str("type"))
-	project := strings.TrimSpace(a.str("project"))
-	tagsRaw := strings.TrimSpace(a.str("tags"))
-	body := a.str("body")
+func toolRecordDecision(s *agent.Sandbox, a agent.ToolArgs) string {
+	title := strings.TrimSpace(a.Str("title"))
+	noteType := strings.TrimSpace(a.Str("type"))
+	project := strings.TrimSpace(a.Str("project"))
+	tagsRaw := strings.TrimSpace(a.Str("tags"))
+	body := a.Str("body")
 
 	if title == "" || body == "" {
 		return "ERROR: title and body are required"
@@ -97,7 +99,7 @@ func toolRecordDecision(s *Sandbox, a toolArgs) string {
 	b.WriteString("\n")
 
 	// File under agent/decisions/ with a slugged, dated filename.
-	dir := filepath.Join(vaultPath, vaultAgentDir, "decisions")
+	dir := filepath.Join(core.VaultPath, core.VaultAgentDir, "decisions")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "ERROR: cannot create decisions dir: " + err.Error()
 	}
@@ -111,8 +113,8 @@ func toolRecordDecision(s *Sandbox, a toolArgs) string {
 	if err := os.WriteFile(full, []byte(b.String()), 0o644); err != nil {
 		return "ERROR: write failed: " + err.Error()
 	}
-	rel := filepath.Join(vaultAgentDir, "decisions", fname)
-	emitLine("  ✏ recorded " + noteType + ": " + rel)
+	rel := filepath.Join(core.VaultAgentDir, "decisions", fname)
+	core.EmitLine("  ✏ recorded " + noteType + ": " + rel)
 	return "Recorded " + noteType + " note at " + rel + " with frontmatter (type, project, date, tags). It is now Dataview-queryable."
 }
 

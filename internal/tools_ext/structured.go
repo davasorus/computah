@@ -22,24 +22,24 @@
 // Plus parseTestFailures (used by the verify loop): turns a wall of `go
 // test` output into just the failing tests and their file:line assertions,
 // so the model gets a target instead of a haystack.
-package agent
+package toolsext
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/core"
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
-	"sort"
 	"strings"
 	"time"
 )
 
 // ---------- Atomic multi-file edits ----------
 
-func toolEditFiles(s *Sandbox, a toolArgs) string {
+func toolEditFiles(s *agent.Sandbox, a agent.ToolArgs) string {
 	raw, err := json.Marshal(a["edits"])
 	if err != nil {
 		return "ERROR: bad edits payload"
@@ -65,10 +65,10 @@ func toolEditFiles(s *Sandbox, a toolArgs) string {
 		if e.Path == "" {
 			return fmt.Sprintf("ERROR: edit %d has no path — nothing applied", i+1)
 		}
-		if isProtected(e.Path) {
+		if agent.IsProtected(e.Path) {
 			return fmt.Sprintf("ERROR: edit %d targets protected path %s — nothing applied", i+1, e.Path)
 		}
-		abs, err := s.resolve(e.Path)
+		abs, err := s.Resolve(e.Path)
 		if err != nil {
 			return fmt.Sprintf("ERROR: edit %d: %v — nothing applied", i+1, err)
 		}
@@ -88,7 +88,7 @@ func toolEditFiles(s *Sandbox, a toolArgs) string {
 		n := strings.Count(string(data), e.OldStr)
 		if n == 0 {
 			return fmt.Sprintf("ERROR: edit %d (%s): old_str not found. %s — nothing applied.",
-				i+1, e.Path, closestLines(string(data), e.OldStr))
+				i+1, e.Path, agent.ClosestLines(string(data), e.OldStr))
 		}
 		if n > 1 {
 			return fmt.Sprintf("ERROR: edit %d (%s): old_str appears %d times — make it unique. Nothing applied.", i+1, e.Path, n)
@@ -100,36 +100,27 @@ func toolEditFiles(s *Sandbox, a toolArgs) string {
 	// originals), then atomic writes.
 	var b strings.Builder
 	for _, abs := range order {
-		if _, err := s.backup(abs); err != nil {
+		if _, err := s.Backup(abs); err != nil {
 			return "ERROR: " + err.Error() + fmt.Sprintf(" (some of %d files may be unwritten — check /diff)", len(order))
 		}
 	}
 	for _, abs := range order {
-		if err := writeAtomic(abs, working[abs]); err != nil {
+		if err := agent.WriteAtomic(abs, working[abs]); err != nil {
 			return "ERROR: write failed for " + abs + ": " + err.Error() + " — check /diff for partial state"
 		}
 		s.Modified = append(s.Modified, abs)
 		rel, _ := filepath.Rel(s.Root, abs)
-		fmt.Println(tint(cYellow, "  ✏ EDITED "+rel+" (atomic set)"))
-		if out, ok := runHook("post_edit", map[string]string{"file": abs}); !ok {
-			fmt.Fprintf(&b, "post_edit hook failed for %s:\n%s\n", rel, tail(out, 512))
+		fmt.Println(core.Tint(core.ColorYellow, "  ✏ EDITED "+rel+" (atomic set)"))
+		if out, ok := agent.RunHook("post_edit", map[string]string{"file": abs}); !ok {
+			fmt.Fprintf(&b, "post_edit hook failed for %s:\n%s\n", rel, agent.Tail(out, 512))
 		}
 	}
 	result := fmt.Sprintf("OK: applied %d edit(s) across %d file(s) atomically: %s",
-		len(edits), len(order), strings.Join(relPaths(s.Root, order), ", "))
+		len(edits), len(order), strings.Join(core.RelPaths(s.Root, order), ", "))
 	if b.Len() > 0 {
 		result += "\nWARNINGS:\n" + b.String()
 	}
 	return result
-}
-
-func relPaths(root string, abs []string) []string {
-	out := make([]string, len(abs))
-	for i, p := range abs {
-		r, _ := filepath.Rel(root, p)
-		out[i] = r
-	}
-	return out
 }
 
 // ---------- gopls: rename_symbol and go_diagnostics ----------
@@ -145,18 +136,18 @@ func goplsAvailable() bool {
 	return goplsAvail
 }
 
-func toolRenameSymbol(s *Sandbox, a toolArgs) string {
+func toolRenameSymbol(s *agent.Sandbox, a agent.ToolArgs) string {
 	if !goplsAvailable() {
 		return "ERROR: gopls is not installed (go install golang.org/x/tools/gopls@latest). " +
 			"Fall back to edit_files: change the declaration and every caller in one atomic set."
 	}
-	file := strings.TrimSpace(a.str("file"))
-	sym := strings.TrimSpace(a.str("symbol"))
-	newName := strings.TrimSpace(a.str("new_name"))
+	file := strings.TrimSpace(a.Str("file"))
+	sym := strings.TrimSpace(a.Str("symbol"))
+	newName := strings.TrimSpace(a.Str("new_name"))
 	if file == "" || sym == "" || newName == "" {
 		return "ERROR: file, symbol, and new_name are all required"
 	}
-	abs, err := s.resolve(file)
+	abs, err := s.Resolve(file)
 	if err != nil {
 		return "ERROR: " + err.Error()
 	}
@@ -179,13 +170,13 @@ func toolRenameSymbol(s *Sandbox, a toolArgs) string {
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Sprintf("ERROR: gopls rename failed: %s\n%s\nFall back to edit_files if this symbol is tricky.",
-			err, tail(string(out), 1024))
+			err, agent.Tail(string(out), 1024))
 	}
 	// gopls edited files behind our back; they're now modified this session.
 	// Mark the whole workspace dirty conservatively so /diff and verify see
 	// it. (We can't know exactly which files gopls touched without -d
 	// parsing; the git checkpoint taken before the turn is the safety net.)
-	fmt.Println(tint(cYellow, fmt.Sprintf("  ✏ RENAMED %s → %s (gopls, workspace-wide)", sym, newName)))
+	fmt.Println(core.Tint(core.ColorYellow, fmt.Sprintf("  ✏ RENAMED %s → %s (gopls, workspace-wide)", sym, newName)))
 	msg := strings.TrimSpace(string(out))
 	if msg == "" {
 		msg = "renamed across the workspace"
@@ -193,14 +184,14 @@ func toolRenameSymbol(s *Sandbox, a toolArgs) string {
 	return "OK: " + msg + " — run go_diagnostics or the verify command to confirm the build."
 }
 
-func toolGoDiagnostics(s *Sandbox, a toolArgs) string {
+func toolGoDiagnostics(s *agent.Sandbox, a agent.ToolArgs) string {
 	if !goplsAvailable() {
 		return "ERROR: gopls is not installed — run the verify command (go build/test) instead."
 	}
-	target := strings.TrimSpace(a.str("path"))
+	target := strings.TrimSpace(a.Str("path"))
 	abs := s.Root
 	if target != "" {
-		if r, err := s.resolve(target); err == nil {
+		if r, err := s.Resolve(target); err == nil {
 			abs = r
 		}
 	}
@@ -213,7 +204,7 @@ func toolGoDiagnostics(s *Sandbox, a toolArgs) string {
 	if res == "" {
 		return "OK: gopls reports no diagnostics."
 	}
-	return "Diagnostics from gopls (type errors and vet findings, no build run):\n" + tail(res, 4096)
+	return "Diagnostics from gopls (type errors and vet findings, no build run):\n" + agent.Tail(res, 4096)
 }
 
 // findIdentOffset returns the byte offset of the first occurrence of ident
@@ -241,101 +232,12 @@ func findIdentOffset(src, ident string) int {
 
 // ---------- Test-failure parsing ----------
 
-var (
-	reTestFail    = regexp.MustCompile(`^\s*--- FAIL: (\S+)`)
-	reAssertLine  = regexp.MustCompile(`^\s*([\w./-]+\.go):(\d+):`)
-	rePanicLine   = regexp.MustCompile(`^panic:`)
-	reBuildFailGo = regexp.MustCompile(`^(# .+|.+\.go:\d+:\d+:)`)
-)
-
-// parseTestFailures distills `go test` (or build) output to the actionable
-// parts: which tests failed and the file:line + message of each assertion.
-// Returns "" when nothing failed (caller keeps the raw output for context).
-func parseTestFailures(out string) string {
-	lines := strings.Split(out, "\n")
-	var b strings.Builder
-	failedTests := []string{}
-	assertions := []string{}
-	inFail := false
-	for i, ln := range lines {
-		if m := reTestFail.FindStringSubmatch(ln); m != nil {
-			failedTests = append(failedTests, m[1])
-			inFail = true
-			continue
-		}
-		if strings.HasPrefix(ln, "=== RUN") || strings.HasPrefix(ln, "--- PASS") || strings.HasPrefix(ln, "ok ") {
-			inFail = false
-		}
-		if inFail {
-			if m := reAssertLine.FindStringSubmatch(ln); m != nil {
-				msg := strings.TrimSpace(ln)
-				// Pull a continuation line only if it's not itself a new
-				// assertion, a test-status marker, or a summary line.
-				if i+1 < len(lines) {
-					nxt := strings.TrimSpace(lines[i+1])
-					isNoise := nxt == "" || nxt == "FAIL" || nxt == "PASS" ||
-						strings.HasPrefix(nxt, "---") || strings.HasPrefix(nxt, "===") ||
-						strings.HasPrefix(nxt, "FAIL\t") || strings.HasPrefix(nxt, "ok ") ||
-						reAssertLine.MatchString(lines[i+1])
-					if !isNoise {
-						msg += " " + nxt
-					}
-				}
-				assertions = append(assertions, msg)
-			}
-		}
-		if rePanicLine.MatchString(ln) {
-			assertions = append(assertions, strings.TrimSpace(ln))
-		}
-	}
-	// Build errors (no test framing): surface the compiler lines.
-	if len(failedTests) == 0 {
-		var buildErrs []string
-		for _, ln := range lines {
-			if reBuildFailGo.MatchString(ln) {
-				buildErrs = append(buildErrs, strings.TrimSpace(ln))
-			}
-		}
-		if len(buildErrs) == 0 {
-			return ""
-		}
-		if len(buildErrs) > 12 {
-			buildErrs = buildErrs[:12]
-		}
-		return "Build errors:\n" + strings.Join(buildErrs, "\n")
-	}
-	sort.Strings(failedTests)
-	b.WriteString(fmt.Sprintf("%d test(s) failed: %s\n", len(failedTests), strings.Join(dedup(failedTests), ", ")))
-	if len(assertions) > 0 {
-		if len(assertions) > 15 {
-			assertions = assertions[:15]
-		}
-		b.WriteString("Failing assertions:\n")
-		for _, a := range assertions {
-			b.WriteString("  " + a + "\n")
-		}
-	}
-	return b.String()
-}
-
-func dedup(ss []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, s := range ss {
-		if !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-// registerStructuredTools adds the atomic/gopls tools. gopls tools are
+// RegisterStructuredTools adds the atomic/gopls tools. gopls tools are
 // registered even when gopls is absent — they return an install hint rather
 // than vanishing, so the model learns the capability exists.
-func registerStructuredTools() {
-	registerTools(
-		Tool{
+func RegisterStructuredTools() {
+	agent.RegisterTools(
+		agent.Tool{
 			Name: "edit_files",
 			Desc: "Apply multiple edits across one or more files ATOMICALLY — all succeed or none apply. Use this whenever a change spans files that must stay consistent (rename a function and its callers, change a signature and its call sites) so the build is never broken between edits. Each edit is {path, old_str, new_str} with a unique old_str, same matching rules as edit_file.",
 			Props: map[string]any{
@@ -356,7 +258,7 @@ func registerStructuredTools() {
 			Required: []string{"edits"},
 			Handler:  toolEditFiles,
 		},
-		Tool{
+		agent.Tool{
 			Name: "rename_symbol",
 			Desc: "Rename a Go symbol (function, type, variable, field) and every reference to it across the whole module, scope-aware, via gopls. Prefer this over manual editing for renames — it won't miss a caller or touch an unrelated same-named identifier. Give the file where the symbol is defined.",
 			Props: map[string]any{
@@ -367,7 +269,7 @@ func registerStructuredTools() {
 			Required: []string{"file", "symbol", "new_name"},
 			Handler:  toolRenameSymbol,
 		},
-		Tool{
+		agent.Tool{
 			Name: "go_diagnostics",
 			Desc: "Get Go type errors and vet findings from gopls WITHOUT running a build — a fast way to check whether the code compiles cleanly after an edit. Optionally scope to a file or package path.",
 			Props: map[string]any{
@@ -376,6 +278,6 @@ func registerStructuredTools() {
 			Handler: toolGoDiagnostics,
 		},
 	)
-	readOnlyTools["go_diagnostics"] = true
-	buildToolSchemas()
+	agent.MarkReadOnly("go_diagnostics")
+	agent.RebuildToolSchemas()
 }

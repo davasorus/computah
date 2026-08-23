@@ -16,7 +16,7 @@
 //
 // Everything degrades: no embed_model configured → keyword search only,
 // silently. Embedding server errors → keyword results plus one dim note.
-package agent
+package toolsext
 
 import (
 	"bytes"
@@ -25,15 +25,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/core"
 	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 )
-
-// embedModel is the embedding model id (config "embed_model"); empty = off.
-var embedModel string
 
 // embedFn is swappable for tests.
 var embedFn = embedTexts
@@ -53,11 +52,11 @@ type vaultIndex struct {
 
 // embedTexts calls the OpenAI-compatible embeddings endpoint.
 func embedTexts(texts []string) ([][]float32, error) {
-	body, err := json.Marshal(map[string]any{"model": embedModel, "input": texts})
+	body, err := json.Marshal(map[string]any{"model": core.EmbedModel, "input": texts})
 	if err != nil {
 		return nil, err
 	}
-	resp, err := httpClient.Post(curBaseURL+"/v1/embeddings", "application/json", bytes.NewReader(body))
+	resp, err := agent.HTTPClient().Post(agent.CurBaseURL()+"/v1/embeddings", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return nil, err
 	}
@@ -143,7 +142,7 @@ func indexPath() string {
 	if err != nil {
 		return ""
 	}
-	h := sha256.Sum256([]byte(vaultPath))
+	h := sha256.Sum256([]byte(core.VaultPath))
 	dir := filepath.Join(home, ".agent", "index")
 	if os.MkdirAll(dir, 0o755) != nil {
 		return ""
@@ -152,7 +151,7 @@ func indexPath() string {
 }
 
 func loadVaultIndex() *vaultIndex {
-	idx := &vaultIndex{Model: embedModel}
+	idx := &vaultIndex{Model: core.EmbedModel}
 	p := indexPath()
 	if p == "" {
 		return idx
@@ -163,7 +162,7 @@ func loadVaultIndex() *vaultIndex {
 	}
 	defer func() { _ = f.Close() }()
 	var loaded vaultIndex
-	if gob.NewDecoder(f).Decode(&loaded) == nil && loaded.Model == embedModel {
+	if gob.NewDecoder(f).Decode(&loaded) == nil && loaded.Model == core.EmbedModel {
 		return &loaded
 	}
 	return idx // model changed or corrupt: rebuild from scratch
@@ -200,7 +199,7 @@ func ensureVaultIndex() (*vaultIndex, error) {
 		if err != nil {
 			continue
 		}
-		rel, _ := filepath.Rel(vaultPath, p)
+		rel, _ := filepath.Rel(core.VaultPath, p)
 		key := fmt.Sprintf("%s|%d|%d", rel, fi.ModTime().Unix(), fi.Size())
 		if existing, ok := byFile[key]; ok {
 			fresh = append(fresh, existing...) // unchanged: keep vectors
@@ -218,7 +217,7 @@ func ensureVaultIndex() (*vaultIndex, error) {
 		}
 	}
 	if len(pendingTexts) > 0 {
-		fmt.Println(tint(cDim, fmt.Sprintf("  (indexing %d new/changed vault chunk(s) for semantic search)", len(pendingTexts))))
+		fmt.Println(core.Tint(core.ColorDim, fmt.Sprintf("  (indexing %d new/changed vault chunk(s) for semantic search)", len(pendingTexts))))
 		const batch = 32
 		for i := 0; i < len(pendingTexts); i += batch {
 			end := min(i+batch, len(pendingTexts))
@@ -371,11 +370,11 @@ func codeIndexPath(root string) string {
 
 // ensureCodeIndex mirrors ensureVaultIndex for the workdir's source files.
 func ensureCodeIndex(root string) (*codeIndex, error) {
-	idx := &codeIndex{Model: embedModel}
+	idx := &codeIndex{Model: core.EmbedModel}
 	if p := codeIndexPath(root); p != "" {
 		if f, err := os.Open(p); err == nil {
 			var loaded codeIndex
-			if gob.NewDecoder(f).Decode(&loaded) == nil && loaded.Model == embedModel {
+			if gob.NewDecoder(f).Decode(&loaded) == nil && loaded.Model == core.EmbedModel {
 				idx = &loaded
 			}
 			_ = f.Close()
@@ -409,7 +408,7 @@ func ensureCodeIndex(root string) (*codeIndex, error) {
 		}
 	}
 	if len(pending) > 0 {
-		fmt.Println(tint(cDim, fmt.Sprintf("  (indexing %d new/changed code chunk(s) for semantic search)", len(pending))))
+		fmt.Println(core.Tint(core.ColorDim, fmt.Sprintf("  (indexing %d new/changed code chunk(s) for semantic search)", len(pending))))
 		texts := make([]string, len(pending))
 		for i, c := range pending {
 			// Path context in the embedded text helps retrieval enormously.
@@ -438,8 +437,8 @@ func ensureCodeIndex(root string) (*codeIndex, error) {
 	return idx, nil
 }
 
-func toolCodeSearch(s *Sandbox, a toolArgs) string {
-	query := strings.TrimSpace(a.str("query"))
+func toolCodeSearch(s *agent.Sandbox, a agent.ToolArgs) string {
+	query := strings.TrimSpace(a.Str("query"))
 	if query == "" {
 		return "ERROR: query must not be empty"
 	}
@@ -479,12 +478,12 @@ func toolCodeSearch(s *Sandbox, a toolArgs) string {
 	return b.String()
 }
 
-// registerEmbedTools adds code_search when an embedding model is configured.
-func registerEmbedTools() {
-	if embedModel == "" {
+// RegisterEmbedTools adds code_search when an embedding model is configured.
+func RegisterEmbedTools() {
+	if core.EmbedModel == "" {
 		return
 	}
-	registerTools(Tool{
+	agent.RegisterTools(agent.Tool{
 		Name: "code_search",
 		Desc: "Semantic search over this workdir's source code — finds code by MEANING, not pattern: 'where do we retry failed connections' works without the word retry appearing. Complements search_files (exact patterns/regex). Results are path:line with a snippet; read_file the hits for full context.",
 		Props: map[string]any{
@@ -493,6 +492,6 @@ func registerEmbedTools() {
 		Required: []string{"query"},
 		Handler:  toolCodeSearch,
 	})
-	readOnlyTools["code_search"] = true
-	buildToolSchemas()
+	agent.MarkReadOnly("code_search")
+	agent.RebuildToolSchemas()
 }

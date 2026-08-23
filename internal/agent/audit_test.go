@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"github.com/davasorus/computah/internal/core"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,4 +86,14 @@ func TestAuditDisabledNoWrite(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(v, "agent", "audit")); !os.IsNotExist(err) {
 		t.Fatal("disabled audit must not create the audit dir")
 	}
+}
+
+// setupVault creates a temp vault dir and points core.VaultPath at it.
+func setupVault(t *testing.T) string {
+	t.Helper()
+	v := t.TempDir()
+	old := core.VaultPath
+	core.VaultPath = v
+	t.Cleanup(func() { core.VaultPath = old })
+	return v
 }
