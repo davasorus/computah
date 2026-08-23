@@ -27,3 +27,26 @@ func TestDashboardGlyphsMatchCore(t *testing.T) {
 		}
 	}
 }
+
+// TestDashboardColorsMatchRoles guards the dashboard's per-event CSS colors
+// against drifting from the canonical roles. Tool traces and stats share the
+// "dim" role across all surfaces; if someone recolors them in the dashboard
+// without a matching role change, this fails. (Concrete hex differs per
+// surface — we assert the role INTENT via the CSS var, not exact color.)
+func TestDashboardColorsMatchRoles(t *testing.T) {
+	// Events whose canonical role is RoleDim must use the --dim var.
+	dimEvents := []string{".ev.tool_call .b", ".ev.tool_done .b", ".ev.stats .b"}
+	for _, sel := range dimEvents {
+		want := sel + " { color: var(--dim); }"
+		if !strings.Contains(dashHTML, want) {
+			t.Errorf("dashboard: %s should use var(--dim) to match its RoleDim across surfaces; expected CSS %q", sel, want)
+		}
+	}
+	// Error stays red, user stays green — pin those too.
+	if !strings.Contains(dashHTML, ".ev.error .b { color: var(--red); }") {
+		t.Error("dashboard: error should be var(--red) (RoleError)")
+	}
+	if !strings.Contains(dashHTML, ".ev.user .b { color: var(--green); }") {
+		t.Error("dashboard: user should be var(--green) (RoleUser)")
+	}
+}

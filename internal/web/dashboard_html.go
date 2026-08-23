@@ -69,13 +69,18 @@ const dashHTML = `<!doctype html>
   .ev { display: flex; gap: 10px; padding: 1px 0; white-space: pre-wrap; word-break: break-word; }
   .ev .t { color: var(--dim); flex: 0 0 auto; font-size: 11px; padding-top: 1px; }
   .ev .b { flex: 1 1 auto; }
-  .ev.tool_call .b { color: var(--cyan); }
-  .ev.tool_done .b { color: var(--dim); }
-  .ev.error .b { color: var(--red); }
-  .ev.status .b { color: var(--violet); }
-  .ev.stats .b { color: var(--amber); }
-  .ev.assistant .b, .ev.token .b { color: var(--ink); }
-  .ev.user .b { color: var(--green); }
+  /* Event colors are keyed to the SAME semantic roles the CLI and TUI use
+     (see internal/core/presentation.go): tool traces and stats are the "dim"
+     role, errors "error", user "user", status "status". The concrete hex is
+     the dashboard's own palette, but the role→color mapping matches the other
+     surfaces so an event means the same thing everywhere. */
+  .ev.tool_call .b { color: var(--dim); }   /* RoleDim */
+  .ev.tool_done .b { color: var(--dim); }   /* RoleDim */
+  .ev.error .b { color: var(--red); }       /* RoleError */
+  .ev.status .b { color: var(--violet); }   /* RoleStatus (its own accent) */
+  .ev.stats .b { color: var(--dim); }       /* RoleDim */
+  .ev.assistant .b, .ev.token .b { color: var(--ink); }  /* RoleAssistant */
+  .ev.user .b { color: var(--green); }       /* RoleUser */
   .ev.approval { background: rgba(209,154,102,0.08); border-left: 2px solid var(--amber); padding: 4px 8px; margin: 4px 0; }
   .ev.approval .apr-q { color: var(--amber); }
   .ev.approval button { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; margin-left: 4px; cursor: pointer; font-family: var(--mono); font-size: 11px; }
