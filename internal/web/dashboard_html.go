@@ -81,6 +81,18 @@ const dashHTML = `<!doctype html>
   .ev.stats .b { color: var(--dim); }       /* RoleDim */
   .ev.assistant .b, .ev.token .b { color: var(--ink); }  /* RoleAssistant */
   .ev.user .b { color: var(--green); }       /* RoleUser */
+
+  /* Live diff blocks: a raw diff event renders as a monospace block with
+     per-line coloring — added lines green, removed red, hunk headers dim —
+     mirroring the terminal's diff rendering so the dashboard is as useful as
+     the CLI for watching edits land. */
+  .diff { margin: 4px 0 4px 0; border: 1px solid var(--line); border-radius: 6px;
+    overflow-x: auto; background: var(--bg); }
+  .diff .dl { display: block; white-space: pre; padding: 0 10px; font-size: 12px; line-height: 1.45; }
+  .diff .dl.add { color: var(--green); background: rgba(152,195,121,0.08); }
+  .diff .dl.del { color: var(--red); background: rgba(224,108,117,0.08); }
+  .diff .dl.hunk { color: var(--dim); }
+  .diff .dl.meta { color: var(--dim); }
   .ev.approval { background: rgba(209,154,102,0.08); border-left: 2px solid var(--amber); padding: 4px 8px; margin: 4px 0; }
   .ev.approval .apr-q { color: var(--amber); }
   .ev.approval button { background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 4px; padding: 2px 8px; margin-left: 4px; cursor: pointer; font-family: var(--mono); font-size: 11px; }
@@ -230,6 +242,20 @@ const dashHTML = `<!doctype html>
     }
     // A user message marks a new turn — the next assistant text is fresh.
     if (ev.kind === 'user') curAsst = null;
+
+    // Raw diff events (EmitDiff → line + meta.raw) render as a colored diff
+    // block instead of a plain line, so edits are as readable here as in the
+    // terminal. Detect a diff by the raw flag plus diff-shaped content.
+    if (ev.kind === 'line' && ev.meta && ev.meta.raw === '1' && looksLikeDiff(ev.text || '')) {
+      var dblock = document.createElement('div');
+      dblock.className = 'ev line';
+      dblock.appendChild(renderDiffBlock(ev.text || ''));
+      feed.appendChild(dblock);
+      while (feed.childNodes.length > 2000) feed.removeChild(feed.firstChild);
+      if (atBottom) feed.scrollTop = feed.scrollHeight;
+      return;
+    }
+
     var row = document.createElement('div');
     row.className = 'ev ' + ev.kind;
     var body = ev.text || '';
@@ -251,6 +277,42 @@ const dashHTML = `<!doctype html>
     return String(s).replace(/[&<>]/g, function (c) {
       return c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;';
     });
+  }
+
+  // looksLikeDiff: a cheap check that the raw text is diff-shaped, so we don't
+  // treat every raw line (e.g. a pre-formatted table) as a diff. Requires at
+  // least one +/- line or a hunk header.
+  function looksLikeDiff(text) {
+    var lines = String(text).split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i];
+      if (l.indexOf('@@') === 0) return true;
+      if ((l[0] === '+' || l[0] === '-') && l.indexOf('+++') !== 0 && l.indexOf('---') !== 0) return true;
+      if (l.indexOf('diff --git') === 0) return true;
+    }
+    return false;
+  }
+
+  // renderDiffBlock: build a <div class="diff"> where each line is classified
+  // (add / del / hunk / meta / context) for per-line coloring. Everything is
+  // escaped; no raw HTML from the diff reaches the DOM.
+  function renderDiffBlock(text) {
+    var wrap = document.createElement('div');
+    wrap.className = 'diff';
+    var lines = String(text).split('\n');
+    for (var i = 0; i < lines.length; i++) {
+      var l = lines[i];
+      var cls = 'dl';
+      if (l.indexOf('@@') === 0) cls += ' hunk';
+      else if (l.indexOf('+++') === 0 || l.indexOf('---') === 0 || l.indexOf('diff --git') === 0) cls += ' meta';
+      else if (l[0] === '+') cls += ' add';
+      else if (l[0] === '-') cls += ' del';
+      var span = document.createElement('span');
+      span.className = cls;
+      span.textContent = l === '' ? ' ' : l; // textContent escapes safely
+      wrap.appendChild(span);
+    }
+    return wrap;
   }
 
   // renderMarkdown: a small, dependency-free markdown→HTML renderer covering
