@@ -31,6 +31,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -186,9 +187,6 @@ func toolRenameSymbol(s *agent.Sandbox, a agent.ToolArgs) string {
 }
 
 func toolGoDiagnostics(s *agent.Sandbox, a agent.ToolArgs) string {
-	if !goplsAvailable() {
-		return "ERROR: gopls is not installed — run the verify command (go build/test) instead."
-	}
 	target := strings.TrimSpace(a.Str("path"))
 	abs := s.Root
 	if target != "" {
@@ -196,16 +194,92 @@ func toolGoDiagnostics(s *agent.Sandbox, a agent.ToolArgs) string {
 			abs = r
 		}
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, "gopls", "check", abs)
-	cmd.Dir = s.Root
-	out, _ := cmd.CombinedOutput() // nonzero exit is normal when diagnostics exist
-	res := strings.TrimSpace(string(out))
-	if res == "" {
-		return "OK: gopls reports no diagnostics."
+	// Preferred path: gopls check — type errors and vet findings WITHOUT a
+	// build, so it's fast and catches type errors a plain build would too.
+	if goplsAvailable() {
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, "gopls", "check", abs)
+		cmd.Dir = s.Root
+		out, _ := cmd.CombinedOutput() // nonzero exit is normal when diagnostics exist
+		res := strings.TrimSpace(string(out))
+		if res == "" {
+			return "OK: gopls reports no diagnostics."
+		}
+		return "Diagnostics from gopls (type errors and vet findings, no build run):\n" + agent.Tail(res, 4096)
 	}
-	return "Diagnostics from gopls (type errors and vet findings, no build run):\n" + agent.Tail(res, 4096)
+	// Fallback: no gopls, so use the toolchain directly. `go vet` surfaces
+	// both compile errors and vet findings; parse its output into clean
+	// file:line diagnostics the model can act on without re-reading raw text.
+	return goVetDiagnostics(s, abs)
+}
+
+// goVetDiagnostics runs `go vet` (which compiles first, so it reports build
+// errors too) on the target and returns structured diagnostics. This is the
+// gopls-free fallback so go_diagnostics works on any machine with the Go
+// toolchain, not only where gopls is installed.
+func goVetDiagnostics(s *agent.Sandbox, abs string) string {
+	// Resolve the target to a package pattern relative to the module root so
+	// `go vet` scopes correctly: a directory becomes "./rel/...", the root
+	// becomes "./...".
+	pattern := "./..."
+	if rel, err := filepath.Rel(s.Root, abs); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
+		pattern = "./" + filepath.ToSlash(rel) + "/..."
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "go", "vet", pattern)
+	cmd.Dir = s.Root
+	out, err := cmd.CombinedOutput() // nonzero exit is normal when problems exist
+	if ctx.Err() == context.DeadlineExceeded {
+		return "ERROR: go vet timed out after 120s — the package may be very large; narrow with a path argument."
+	}
+	res := strings.TrimSpace(string(out))
+	if res == "" && err == nil {
+		return "OK: go vet reports no build errors or vet findings. (gopls not installed; install it for type-level diagnostics without a build.)"
+	}
+	diags := parseGoVet(res, s.Root)
+	if len(diags) == 0 {
+		// Output that didn't parse as file:line diagnostics (e.g. a module
+		// resolution error) is still worth returning verbatim.
+		return "go vet output (gopls not installed):\n" + agent.Tail(res, 4096)
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "Diagnostics from `go vet` (%d; gopls not installed — these include build errors):\n", len(diags))
+	for _, d := range diags {
+		b.WriteString("  " + d + "\n")
+	}
+	return agent.Tail(b.String(), 4096)
+}
+
+// parseGoVet extracts "file:line[:col]: message" diagnostics from go vet /
+// compiler output, normalizing absolute paths back to workspace-relative so
+// the model sees the same paths it uses for edits. Non-diagnostic noise
+// (the leading "# pkg" headers, "go: ..." lines) is dropped.
+func parseGoVet(out, root string) []string {
+	// file:line: msg  or  file:line:col: msg
+	re := regexp.MustCompile(`^(.+?\.go):(\d+)(?::(\d+))?:\s*(.*)$`)
+	var diags []string
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, "go:") {
+			continue
+		}
+		m := re.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		file := m[1]
+		if rel, err := filepath.Rel(root, file); err == nil && !strings.HasPrefix(rel, "..") {
+			file = filepath.ToSlash(rel)
+		}
+		loc := file + ":" + m[2]
+		if m[3] != "" {
+			loc += ":" + m[3]
+		}
+		diags = append(diags, loc+": "+m[4])
+	}
+	return diags
 }
 
 // findIdentOffset returns the byte offset of the first occurrence of ident
@@ -272,7 +346,7 @@ func RegisterStructuredTools() {
 		},
 		agent.Tool{
 			Name: "go_diagnostics",
-			Desc: "Get Go type errors and vet findings from gopls WITHOUT running a build — a fast way to check whether the code compiles cleanly after an edit. Optionally scope to a file or package path.",
+			Desc: "Get Go type errors and vet findings — a fast way to check whether the code compiles cleanly after an edit. Uses gopls when available (type errors without a build); otherwise falls back to `go vet` (which also reports build errors), so it works with just the Go toolchain. Optionally scope to a file or package path.",
 			Props: map[string]any{
 				"path": map[string]any{"type": "string", "description": "Optional file or directory to check (default: whole workdir)"},
 			},
