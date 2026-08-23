@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -15,21 +16,46 @@ func ConfinePath(base, p string) (string, error) {
 	if p == "" {
 		return "", fmt.Errorf("empty path")
 	}
+
 	absBase, err := filepath.Abs(base)
 	if err != nil {
 		return "", fmt.Errorf("resolve base: %w", err)
 	}
-	var abs string
-	if filepath.IsAbs(p) {
-		abs = filepath.Clean(p)
-	} else {
-		abs = filepath.Clean(filepath.Join(absBase, p))
+	canonBase, err := filepath.EvalSymlinks(absBase)
+	if err != nil {
+		return "", fmt.Errorf("resolve base symlinks: %w", err)
 	}
-	// Containment check: abs must equal base or sit under base + separator.
-	// The trailing-separator guard prevents "/home/user-evil" matching base
-	// "/home/user".
-	if abs != absBase && !strings.HasPrefix(abs, absBase+string(filepath.Separator)) {
+
+	var candidate string
+	if filepath.IsAbs(p) {
+		candidate = filepath.Clean(p)
+	} else {
+		candidate = filepath.Clean(filepath.Join(canonBase, p))
+	}
+	candidate, err = filepath.Abs(candidate)
+	if err != nil {
+		return "", fmt.Errorf("resolve target: %w", err)
+	}
+
+	canonTarget, err := filepath.EvalSymlinks(candidate)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return "", fmt.Errorf("resolve target symlinks: %w", err)
+		}
+		parent := filepath.Dir(candidate)
+		canonParent, perr := filepath.EvalSymlinks(parent)
+		if perr != nil {
+			return "", fmt.Errorf("resolve parent symlinks: %w", perr)
+		}
+		canonTarget = filepath.Join(canonParent, filepath.Base(candidate))
+	}
+
+	rel, err := filepath.Rel(canonBase, canonTarget)
+	if err != nil {
+		return "", fmt.Errorf("rel path check failed: %w", err)
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) || filepath.IsAbs(rel) {
 		return "", fmt.Errorf("path %q escapes the allowed directory", p)
 	}
-	return abs, nil
+	return canonTarget, nil
 }
