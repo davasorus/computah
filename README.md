@@ -56,7 +56,9 @@ Two layers, both optional:
 - **Agent behavior** (compaction, budgets, MCP servers, hooks, etc.) via the
   agent's own `~/.agent/config.json`, unchanged. Set `price_in_per_m` /
   `price_out_per_m` (USD per 1M tokens) to see an estimated session cost in
-  `/stats` when using a paid endpoint; local servers leave them unset.
+  `/stats` when using a paid endpoint; local servers leave them unset. Set
+  `plan_model` to route `/plan` turns to a stronger model while normal
+  execution stays on the main (faster) model.
 
 ## Layout
 

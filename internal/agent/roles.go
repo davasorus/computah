@@ -47,6 +47,18 @@ func auxModelFor() string {
 	return curModel
 }
 
+// modelForTurn returns the model a normal agent turn should use. In plan mode
+// it prefers planModel (a stronger model for the reasoning-heavy planning
+// step), falling back to the main model when unset — mirroring how
+// currentReasoningEffort() prefers planReasoningEffort in plan mode. Execution
+// turns (plan mode off) always use curModel.
+func modelForTurn() string {
+	if planMode && planModel != "" {
+		return planModel
+	}
+	return curModel
+}
+
 // loadAgentRoles scans personal then repo-local role dirs; repo wins.
 func loadAgentRoles(root string) {
 	dirs := []string{}

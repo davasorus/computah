@@ -92,6 +92,7 @@ import (
 var (
 	curBaseURL    string
 	curModel      string
+	planModel     string // from config plan_model: used for plan-mode turns; empty falls back to curModel
 	verifyCommand string // from config: runs after any turn that modified files
 	assumeYes     bool   // -yes: auto-approve mutating commands (non-interactive modes)
 )
@@ -267,6 +268,7 @@ type Config struct {
 	BudgetKTokens     int                        `json:"budget_ktokens,omitempty"`        // warn when generated+reasoning tokens exceed this many thousand (0 = off)
 	VerifyCommand     string                     `json:"verify_command,omitempty"`        // e.g. "go build ./... && go test ./..."
 	AuxModel          string                     `json:"aux_model,omitempty"`             // smaller model for compaction/titles/commit messages
+	PlanModel         string                     `json:"plan_model,omitempty"`            // stronger model for /plan turns; falls back to the main model when unset
 	PriceInPerM       float64                    `json:"price_in_per_m,omitempty"`        // USD per 1M input (prompt) tokens — enables session cost in /stats (0 = off, e.g. local)
 	PriceOutPerM      float64                    `json:"price_out_per_m,omitempty"`       // USD per 1M output (generated+reasoning) tokens
 	VaultPath         string                     `json:"vault_path,omitempty"`            // Obsidian vault root — enables vault_search/read/note
@@ -465,6 +467,7 @@ func Run(opts Options) int {
 	loadCustomCommands(root)                                      // /<name> templates from .agent/commands/
 	loadAgentRoles(root)                                          // spawn_task roles from .agent/agents/
 	auxModel = cfg.AuxModel                                       // housekeeping model (compact/titles/commits)
+	planModel = cfg.PlanModel                                     // stronger model for plan-mode turns (empty = use main model)
 	priceInPerM, priceOutPerM = cfg.PriceInPerM, cfg.PriceOutPerM // cost estimation in /stats (0 = local/free, no cost shown)
 	core.VaultPath = cfg.VaultPath
 	core.EmbedModel = cfg.EmbedModel
@@ -851,12 +854,13 @@ func Run(opts Options) int {
 			messages = append(messages, out[base:]...)
 			st.Append(messages)
 		} else {
-			messages = runTurn(baseURL, model, sb, st, messages)
+			turnModel := modelForTurn() // plan mode may use a stronger model
+			messages = runTurn(baseURL, turnModel, sb, st, messages)
 			st.Append(messages) // autosave every turn — crashes lose nothing
 
 			// Close the loop against reality: if this turn modified files and a
 			// verify command is configured, run it and feed failures back.
-			messages = runVerifyLoop(baseURL, model, sb, st, messages, modifiedBefore)
+			messages = runVerifyLoop(baseURL, turnModel, sb, st, messages, modifiedBefore)
 		}
 		notifyTurnDone(time.Since(turnStart))
 		checkBudget()
