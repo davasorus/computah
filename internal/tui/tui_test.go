@@ -1,10 +1,11 @@
 package tui
 
 import (
-	"github.com/davasorus/computah/internal/agent"
-	"github.com/davasorus/computah/internal/core"
 	"strings"
 	"testing"
+
+	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/core"
 
 	tea "github.com/charmbracelet/bubbletea"
 )

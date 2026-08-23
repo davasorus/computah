@@ -1,5 +1,8 @@
 # computah
 
+[![CI](https://github.com/davasorus/computah/actions/workflows/ci.yml/badge.svg)](https://github.com/davasorus/computah/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 A self-hosted, terminal-based AI coding agent in Go. It runs against a local
 OpenAI-compatible model server (e.g. [LM Studio](https://lmstudio.ai/)) — no
 cloud, no API keys. It reads and edits code in a working directory, runs
@@ -53,11 +56,19 @@ Two layers, both optional:
 computah/
   main.go              entry — hands off to cmd/
   cmd/                 Cobra command tree (run, exec, eval, dashboard, version)
-  internal/agent/      the agent: loop, tools, session, TUI, MCP, dashboard, …
+  internal/
+    core/              shared types (Message, Event), event bus, styling, config
+    agent/             the engine: sandbox, tool registry, loop, sessions, MCP
+    md/                terminal markdown rendering
+    tui/               full-screen Bubble Tea interface
+    web/               read-only / two-way / headless web dashboard
+    tools_ext/         engine tool plug-ins (decision, edits, embeddings, vault)
 ```
 
-The `internal/agent` package holds the full agent implementation. The `cmd`
-layer only parses flags/config and calls `agent.Run`.
+`core` imports nothing; `agent` builds on `core`; the presentation packages
+(`md`, `tui`, `web`) and `tools_ext` build on `agent`. `agent` never imports
+them back — `cmd` injects the UI and tool registrations through hooks, so the
+dependency graph stays acyclic.
 
 ## Requirements
 

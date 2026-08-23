@@ -14,13 +14,14 @@ package agent
 
 import (
 	"fmt"
-	"github.com/davasorus/computah/internal/core"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/davasorus/computah/internal/core"
 )
 
 // auditEnabled gates the audit note (config "audit").

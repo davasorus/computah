@@ -1,11 +1,12 @@
 package web
 
 import (
-	"github.com/davasorus/computah/internal/agent"
-	"github.com/davasorus/computah/internal/core"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/core"
 )
 
 // TestHeadlessInfoCommandRoutes verifies a browser-submitted read-only

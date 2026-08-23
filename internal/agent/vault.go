@@ -105,7 +105,7 @@ func writeJournal(workdir, title string, messages []Message) {
 	if err != nil {
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if fi, _ := f.Stat(); fi != nil && fi.Size() == 0 {
 		_, _ = f.WriteString("# Agent journal\n")
 	}

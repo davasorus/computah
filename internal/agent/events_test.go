@@ -1,11 +1,12 @@
 package agent
 
 import (
-	"github.com/davasorus/computah/internal/core"
-	"github.com/davasorus/computah/internal/md"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/davasorus/computah/internal/core"
+	"github.com/davasorus/computah/internal/md"
 )
 
 func TestEventBusDeliversToSubscribers(t *testing.T) {

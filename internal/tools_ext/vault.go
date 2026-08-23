@@ -65,7 +65,7 @@ func RegisterVaultTools() {
 // metadata and anything hidden.
 func vaultNotes() []string {
 	var notes []string
-	filepath.WalkDir(core.VaultPath, func(p string, d os.DirEntry, err error) error {
+	_ = filepath.WalkDir(core.VaultPath, func(p string, d os.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
@@ -112,7 +112,7 @@ func toolVaultSearch(s *agent.Sandbox, a agent.ToolArgs) string {
 				}
 				if linesHit < maxLines {
 					linesHit++
-					b.WriteString(fmt.Sprintf("  L%d: %s\n", i+1, strings.TrimSpace(line)))
+					fmt.Fprintf(&b, "  L%d: %s\n", i+1, strings.TrimSpace(line))
 				}
 			}
 		}
@@ -121,7 +121,7 @@ func toolVaultSearch(s *agent.Sandbox, a agent.ToolArgs) string {
 	// the user remembers the concept but not the keyword.
 	if core.EmbedModel != "" {
 		if hits, err := semanticVaultHits(query, 4); err != nil {
-			b.WriteString(fmt.Sprintf("(semantic search unavailable: %v)\n", err))
+			fmt.Fprintf(&b, "(semantic search unavailable: %v)\n", err)
 		} else if len(hits) > 0 {
 			b.WriteString("\n## Related by meaning\n")
 			for _, h := range hits {
@@ -129,7 +129,7 @@ func toolVaultSearch(s *agent.Sandbox, a agent.ToolArgs) string {
 				if len(snippet) > 160 {
 					snippet = snippet[:160] + "…"
 				}
-				b.WriteString(fmt.Sprintf("  %s (%.2f): %s\n", strings.TrimSuffix(h.chunk.Path, ".md"), h.score, snippet))
+				fmt.Fprintf(&b, "  %s (%.2f): %s\n", strings.TrimSuffix(h.chunk.Path, ".md"), h.score, snippet)
 			}
 		}
 	}
@@ -249,10 +249,10 @@ func toolVaultNote(s *agent.Sandbox, a agent.ToolArgs) string {
 			section = "# " + title + "\n" + section
 		}
 		if _, err := f.WriteString(section); err != nil {
-			f.Close()
+			_ = f.Close()
 			return "ERROR: " + err.Error()
 		}
-		f.Close()
+		_ = f.Close()
 	default:
 		return "ERROR: mode must be 'append' or 'create'"
 	}

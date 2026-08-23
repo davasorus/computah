@@ -37,16 +37,12 @@ var (
 	emitLine           = core.EmitLine
 	emitLineC          = core.EmitLineC
 	emitDiff           = core.EmitDiff
-	emitStatus         = core.EmitStatus
 	emitError          = core.EmitError
-	emitToken          = core.EmitToken
 	emitThinking       = core.EmitThinking
 	emitBusy           = core.EmitBusy
 	emitUser           = core.EmitUser
-	emitAssistant      = core.EmitAssistant
 	emitToolCall       = core.EmitToolCall
 	emitToolCallInline = core.EmitToolCallInline
-	emitToolDone       = core.EmitToolDone
 	emitStats          = core.EmitStats
 )
 
@@ -61,8 +57,6 @@ const (
 	cYellow = core.ColorYellow
 	cCyan   = core.ColorCyan
 )
-
-var termWidth = core.TermWidth
 
 // --- core data types (moved to core) ---
 type Message = core.Message

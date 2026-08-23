@@ -18,10 +18,11 @@
 package tui
 
 import (
-	"github.com/davasorus/computah/internal/agent"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/davasorus/computah/internal/agent"
 )
 
 // tuiHistory is an in-memory recall ring seeded from the shared history file.

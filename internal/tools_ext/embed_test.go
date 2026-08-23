@@ -2,13 +2,14 @@ package toolsext
 
 import (
 	"fmt"
-	"github.com/davasorus/computah/internal/agent"
-	"github.com/davasorus/computah/internal/core"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/core"
 )
 
 // stubEmbedder produces deterministic vectors: notes about "clustering"

@@ -1,9 +1,10 @@
 package md
 
 import (
-	"github.com/davasorus/computah/internal/core"
 	"strings"
 	"testing"
+
+	"github.com/davasorus/computah/internal/core"
 )
 
 func TestIsTableSeparator(t *testing.T) {

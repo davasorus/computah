@@ -17,13 +17,14 @@ package web
 
 import (
 	"fmt"
-	"github.com/davasorus/computah/internal/agent"
-	"github.com/davasorus/computah/internal/core"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
 	"syscall"
+
+	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/core"
 )
 
 func RunHeadless(baseURL, model string, sb *agent.Sandbox, st *agent.SessionStore, messages []core.Message) {

@@ -20,12 +20,13 @@ package web
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/davasorus/computah/internal/agent"
-	"github.com/davasorus/computah/internal/core"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/core"
 )
 
 // dashClient is one connected browser (one SSE stream).
@@ -138,7 +139,7 @@ func dashEventsHandler(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case <-ping.C:
-			fmt.Fprint(w, ": ping\n\n")
+			_, _ = fmt.Fprint(w, ": ping\n\n")
 			flusher.Flush()
 		case e, ok := <-c.ch:
 			if !ok {
@@ -151,7 +152,7 @@ func dashEventsHandler(w http.ResponseWriter, r *http.Request) {
 				"meta": e.Meta,
 				"time": e.Time.Format("15:04:05"),
 			})
-			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.Kind, data)
+			_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.Kind, data)
 			flusher.Flush()
 		}
 	}
@@ -171,7 +172,7 @@ func dashStateHandler(w http.ResponseWriter, r *http.Request) {
 	td := agent.Todos()
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]any{"stats": st, "todos": td, "can_submit": dashAllowWrite})
+	_ = json.NewEncoder(w).Encode(map[string]any{"stats": st, "todos": td, "can_submit": dashAllowWrite})
 }
 
 // dashSubmitHandler accepts a browser-submitted prompt (POST /api/submit,
@@ -196,7 +197,7 @@ func dashSubmitHandler(w http.ResponseWriter, r *http.Request) {
 	select {
 	case core.BrowserSubmissions <- body.Text:
 		w.WriteHeader(http.StatusAccepted)
-		w.Write([]byte(`{"queued":true}`))
+		_, _ = w.Write([]byte(`{"queued":true}`))
 	default:
 		http.Error(w, "submission queue full", http.StatusServiceUnavailable)
 	}
@@ -232,7 +233,7 @@ func dashApproveHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if agent.AnswerWebApproval(body.ID, d) {
 		w.WriteHeader(http.StatusAccepted)
-		w.Write([]byte(`{"ok":true}`))
+		_, _ = w.Write([]byte(`{"ok":true}`))
 	} else {
 		http.Error(w, "no matching pending approval (already answered?)", http.StatusConflict)
 	}
@@ -244,7 +245,7 @@ func dashIndexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	fmt.Fprint(w, dashHTML)
+	_, _ = fmt.Fprint(w, dashHTML)
 }
 
 // SetDashWrite enables or disables browser prompt submissions (the cmd layer

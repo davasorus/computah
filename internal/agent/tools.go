@@ -332,7 +332,7 @@ func appendAllow(prefix string) string {
 	if err != nil {
 		return err.Error()
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	_, _ = fmt.Fprintln(f, prefix)
 	return ""
 }
@@ -1096,7 +1096,7 @@ func (s *Sandbox) toolFetchURL(a toolArgs) string {
 	if err != nil {
 		return "ERROR: " + err.Error()
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	const limit = 100 * 1024
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	text := string(body)

@@ -120,10 +120,10 @@ func RebuildToolSchemas() { buildToolSchemas() }
 
 // Str returns the string value for key (exported accessor for out-of-package
 // tool handlers).
-func (a ToolArgs) Str(key string) string { return toolArgs(a).str(key) }
+func (a ToolArgs) Str(key string) string { return a.str(key) }
 
 // Num returns the int value for key.
-func (a ToolArgs) Num(key string) int { return toolArgs(a).num(key) }
+func (a ToolArgs) Num(key string) int { return a.num(key) }
 
 // HTTPClient is the shared HTTP client (long timeout for model calls),
 // exported for tool packages that make their own requests.

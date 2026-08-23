@@ -47,7 +47,7 @@ func capture(f func()) string {
 		done <- string(data)
 	}()
 	f()
-	w.Close()
+	_ = w.Close()
 	os.Stdout = orig
 	return <-done
 }

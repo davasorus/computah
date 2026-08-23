@@ -17,8 +17,9 @@ package md
 
 import (
 	"fmt"
-	"github.com/davasorus/computah/internal/core"
 	"strings"
+
+	"github.com/davasorus/computah/internal/core"
 )
 
 type Writer struct {

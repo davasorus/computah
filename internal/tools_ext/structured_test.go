@@ -1,11 +1,12 @@
 package toolsext
 
 import (
-	"github.com/davasorus/computah/internal/agent"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/davasorus/computah/internal/agent"
 )
 
 func TestEditFilesAtomicSuccess(t *testing.T) {

@@ -3,13 +3,14 @@ package web
 import (
 	"context"
 	"encoding/json"
-	"github.com/davasorus/computah/internal/agent"
-	"github.com/davasorus/computah/internal/core"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/core"
 )
 
 func TestDashboardFanOutAndRing(t *testing.T) {

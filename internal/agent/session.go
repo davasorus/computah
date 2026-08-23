@@ -264,7 +264,7 @@ func loadSession(path string, tail int) ([]Message, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var msgs []Message
 	sc := bufio.NewScanner(f)

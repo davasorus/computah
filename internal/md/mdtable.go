@@ -10,8 +10,9 @@
 package md
 
 import (
-	"github.com/davasorus/computah/internal/core"
 	"strings"
+
+	"github.com/davasorus/computah/internal/core"
 )
 
 // isTableSeparator reports whether a line is a GFM table separator row —

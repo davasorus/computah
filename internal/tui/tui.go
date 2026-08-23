@@ -20,13 +20,14 @@ package tui
 
 import (
 	"fmt"
-	"github.com/davasorus/computah/internal/agent"
-	"github.com/davasorus/computah/internal/core"
-	"github.com/davasorus/computah/internal/md"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/core"
+	"github.com/davasorus/computah/internal/md"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"

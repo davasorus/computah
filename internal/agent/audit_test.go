@@ -1,11 +1,12 @@
 package agent
 
 import (
-	"github.com/davasorus/computah/internal/core"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/davasorus/computah/internal/core"
 )
 
 func TestRecordActivity(t *testing.T) {

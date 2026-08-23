@@ -70,7 +70,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"github.com/davasorus/computah/internal/core"
 	"net"
 	"net/http"
 	"os"
@@ -82,6 +81,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/davasorus/computah/internal/core"
 )
 
 // ---------- Runtime state ----------
@@ -1015,7 +1016,7 @@ func listServerModels(baseURL, current string) {
 	}
 	resp, err := httpClient.Get(baseURL + "/api/v0/models")
 	if err == nil && resp.StatusCode == http.StatusOK {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		if json.NewDecoder(resp.Body).Decode(&out) == nil && len(out.Data) > 0 {
 			sort.Slice(out.Data, func(i, j int) bool { // loaded first
 				return out.Data[i].State == "loaded" && out.Data[j].State != "loaded"
@@ -1038,9 +1039,9 @@ func listServerModels(baseURL, current string) {
 			fmt.Println("switch with /model <id> — an unloaded model JIT-loads on its first request (slow first turn)")
 			return
 		}
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	} else if resp != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 	// Not LM Studio (or native API disabled): plain list, no state info.
 	models, err := listModels(baseURL)

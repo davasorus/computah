@@ -25,13 +25,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/davasorus/computah/internal/agent"
-	"github.com/davasorus/computah/internal/core"
 	"math"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/core"
 )
 
 // embedFn is swappable for tests.
@@ -60,7 +61,7 @@ func embedTexts(texts []string) ([][]float32, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	var out struct {
 		Data []struct {
 			Index     int       `json:"index"`

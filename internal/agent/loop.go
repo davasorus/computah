@@ -4,14 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/davasorus/computah/internal/core"
-	"github.com/davasorus/computah/internal/md"
 	"math/rand"
 	"os"
 	"sort"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/davasorus/computah/internal/core"
+	"github.com/davasorus/computah/internal/md"
 )
 
 // parseInlineToolCalls extracts tool calls a model emitted as JSON in its text

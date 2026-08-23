@@ -71,7 +71,7 @@ func ParseTestFailures(out string) string {
 		return "Build errors:\n" + strings.Join(buildErrs, "\n")
 	}
 	sort.Strings(failedTests)
-	b.WriteString(fmt.Sprintf("%d test(s) failed: %s\n", len(failedTests), strings.Join(Dedup(failedTests), ", ")))
+	fmt.Fprintf(&b, "%d test(s) failed: %s\n", len(failedTests), strings.Join(Dedup(failedTests), ", "))
 	if len(assertions) > 0 {
 		if len(assertions) > 15 {
 			assertions = assertions[:15]

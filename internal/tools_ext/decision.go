@@ -17,12 +17,13 @@ package toolsext
 
 import (
 	"fmt"
-	"github.com/davasorus/computah/internal/agent"
-	"github.com/davasorus/computah/internal/core"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/davasorus/computah/internal/agent"
+	"github.com/davasorus/computah/internal/core"
 )
 
 // RegisterDecisionTool adds record_decision when a vault is configured.

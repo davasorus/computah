@@ -1,0 +1,104 @@
+# GoReleaser config for computah — multi-arch binaries + a GHCR container image.
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: computah
+    main: .
+    binary: computah
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w -X github.com/davasorus/computah/cmd.version={{.Version}}
+
+archives:
+  - id: computah
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_
+      {{- if eq .Os "darwin" }}macos{{ else }}{{ .Os }}{{ end }}_{{ .Arch }}
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+dockers:
+  - image_templates:
+      - "ghcr.io/davasorus/computah:{{ .Version }}-amd64"
+    use: buildx
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/amd64"
+      - "--label=org.opencontainers.image.source=https://github.com/davasorus/computah"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+    goarch: amd64
+  - image_templates:
+      - "ghcr.io/davasorus/computah:{{ .Version }}-arm64"
+    use: buildx
+    dockerfile: Dockerfile
+    build_flag_templates:
+      - "--platform=linux/arm64"
+      - "--label=org.opencontainers.image.source=https://github.com/davasorus/computah"
+      - "--label=org.opencontainers.image.version={{ .Version }}"
+      - "--label=org.opencontainers.image.licenses=MIT"
+    goarch: arm64
+
+docker_manifests:
+  - name_template: "ghcr.io/davasorus/computah:{{ .Version }}"
+    image_templates:
+      - "ghcr.io/davasorus/computah:{{ .Version }}-amd64"
+      - "ghcr.io/davasorus/computah:{{ .Version }}-arm64"
+  - name_template: "ghcr.io/davasorus/computah:latest"
+    image_templates:
+      - "ghcr.io/davasorus/computah:{{ .Version }}-amd64"
+      - "ghcr.io/davasorus/computah:{{ .Version }}-arm64"
+
+changelog:
+  sort: asc
+  use: github
+  groups:
+    - title: Features
+      regexp: '^.*?feat(\(.+\))??!?:.+$'
+      order: 0
+    - title: Bug fixes
+      regexp: '^.*?fix(\(.+\))??!?:.+$'
+      order: 1
+    - title: Documentation
+      regexp: '^.*?docs(\(.+\))??!?:.+$'
+      order: 2
+    - title: Build & CI
+      regexp: '^.*?(build|ci)(\(.+\))??!?:.+$'
+      order: 3
+    - title: Other
+      order: 999
+  filters:
+    exclude:
+      - '^wip:'
+      - '^Merge '
+      - typo
+
+release:
+  header: |
+    ## computah {{ .Tag }}
+
+    A self-hosted, terminal-based AI coding agent for local model servers.
+
+    ### Install
+    ```
+    go install github.com/davasorus/computah@{{ .Tag }}
+    ```
+    Or download a binary below, or pull the container:
+    ```
+    docker pull ghcr.io/davasorus/computah:{{ trimprefix .Tag "v" }}
+    ```
