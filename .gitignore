@@ -1,0 +1,12 @@
+# compiled binaries
+/computah
+/computah-bin
+/agent
+*.exe
+
+# editor / OS
+/.vscode/
+.DS_Store
+
+# local agent state that may live in-repo during dev
+*.log
