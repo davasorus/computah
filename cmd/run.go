@@ -8,7 +8,6 @@ import (
 
 var (
 	runResume string
-	runTUI    bool
 )
 
 var runCmd = &cobra.Command{
@@ -21,7 +20,6 @@ var runCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		opts := baseOptions()
 		opts.Resume = runResume
-		opts.Tui = runTUI
 		if len(args) == 1 {
 			opts.PositionalRoot = args[0]
 		}
@@ -35,6 +33,4 @@ var runCmd = &cobra.Command{
 func init() {
 	runCmd.Flags().StringVar(&runResume, "resume", "",
 		"resume a session: 'latest', 'pick', or a name from /sessions")
-	runCmd.Flags().BoolVar(&runTUI, "tui", false,
-		"run the full-screen TUI instead of the plain REPL (experimental)")
 }

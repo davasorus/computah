@@ -20,6 +20,7 @@ import (
 var (
 	flagURL   string
 	flagModel string
+	flagTUI   bool
 )
 
 var rootCmd = &cobra.Command{
@@ -67,6 +68,8 @@ func init() {
 		"base URL of the OpenAI-compatible server (default: auto-detect / config)")
 	rootCmd.PersistentFlags().StringVar(&flagModel, "model", "",
 		"model id (default: first chat model on the server / config)")
+	rootCmd.PersistentFlags().BoolVar(&flagTUI, "tui", false,
+		"run the full-screen TUI as the terminal interface (composes with any command)")
 	_ = viper.BindPFlag("url", rootCmd.PersistentFlags().Lookup("url"))
 	_ = viper.BindPFlag("model", rootCmd.PersistentFlags().Lookup("model"))
 
@@ -103,6 +106,7 @@ func baseOptions() agent.Options {
 		URL:            resolvedURL(),
 		Model:          resolvedModel(),
 		Runs:           1,
+		Tui:            flagTUI, // global --tui: standalone terminal-interface toggle
 		StartDashboard: web.StartDashboard,
 		RunHeadless:    web.RunHeadless,
 		SetDashWrite:   web.SetDashWrite,

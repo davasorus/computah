@@ -51,34 +51,19 @@ func TestPruneStaleReads(t *testing.T) {
 	}
 }
 
-func TestShrinkOldToolResultsBoundaries(t *testing.T) {
-	// test exactly at the threshold boundary (2048 bytes)
-	msg := Message{Role: "tool", ToolCallID: "r1", Content: strings.Repeat("a", 2048)}
+func TestManageContextNoOpBelowBudget(t *testing.T) {
+	// Below the budget, manageContext must not touch a single byte —
+	// history edits invalidate the server's KV-cache prefix.
 	msgs := []Message{
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r1", Type: "function", Function: ToolFunction{Name: "t"}}}},
-		msg,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r2", Type: "function", Function: ToolFunction{Name: "t"}}}},
-		{Role: "tool", ToolCallID: "r2", Content: "ok"},
+		callMsg("r1", "read_file", "a.go"),
+		{Role: "tool", ToolCallID: "r1", Content: strings.Repeat("x", 5000)},
+		callMsg("w1", "write_file", "a.go"),
+		{Role: "tool", ToolCallID: "w1", Content: "OK"},
 	}
-	// The first msg's content is exactly 2048.
-	// Since the threshold logic uses `len(content) > threshold`, it should NOT be shrunk yet.
-	_ = shrinkOldToolResults(msgs)
-	if len(msgs[1].Content) != 2048 {
-		t.Errorf("expected length 2048, got %d", len(msgs[1].Content))
-	}
-
-	// test just over the threshold boundary (2049 bytes)
-	msg = Message{Role: "tool", ToolCallID: "r3", Content: strings.Repeat("a", 2049)}
-	msgs = []Message{
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r3", Type: "function", Function: ToolFunction{Name: "t"}}}},
-		msg,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID, "r4", Type: "function", Function: ToolFunction{Name: "t"}}}},
-		{Role: "tool", ToolCallID: "r4", Content: "ok"},
-	}
-	// The second msg's content is 2049. It should be shrunk if it's not the latest.
-	_ = shrinkOldToolResults(msgs)
-	if len(msgs[1].Content) != 63 { // headKeep + tailKeep = 31 + 32? No, wait.
-		// Let's check what the actual logic is in session.go
+	before := msgs[1].Content
+	_ = manageContext(msgs)
+	if msgs[1].Content != before {
+		t.Fatal("manageContext must be a strict no-op below the token budget")
 	}
 }
 

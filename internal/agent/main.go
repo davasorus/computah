@@ -454,7 +454,11 @@ func Run(opts Options) int {
 	// -serve: read-only web dashboard as a second bus subscriber.
 	if *serveFlag != "" || *serveWriteFlag || *headlessFlag {
 		if opts.SetDashWrite != nil {
-			opts.SetDashWrite(*serveWriteFlag || *headlessFlag)
+			// The browser can submit when explicitly asked (-serve-write /
+			// headless) OR when a TUI is running alongside the served
+			// dashboard — the TUI drains browser submissions, so a read-only
+			// browser would be a dead end in that combined mode.
+			opts.SetDashWrite(*serveWriteFlag || *headlessFlag || opts.Tui)
 		}
 		// Only headless has NO terminal, so only headless must route
 		// approvals to the browser. In -serve-write REPL/TUI the user is at
