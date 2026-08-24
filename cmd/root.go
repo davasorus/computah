@@ -56,10 +56,8 @@ func init() {
 	// Wire the out-of-engine tool packages into the engine's registration
 	// hook so they load at startup without the engine importing them.
 	agent.ToolRegistrations = append(agent.ToolRegistrations,
-		toolsext.RegisterDecisionTool,
 		toolsext.RegisterEmbedTools,
 		toolsext.RegisterStructuredTools,
-		toolsext.RegisterVaultTools,
 		toolsext.RegisterGitTools,
 	)
 
@@ -72,7 +70,7 @@ func init() {
 	_ = viper.BindPFlag("url", rootCmd.PersistentFlags().Lookup("url"))
 	_ = viper.BindPFlag("model", rootCmd.PersistentFlags().Lookup("model"))
 
-	rootCmd.AddCommand(runCmd, execCmd, evalCmd, dashboardCmd, versionCmd)
+	rootCmd.AddCommand(runCmd, execCmd, evalCmd, dashboardCmd, versionCmd, configCmd)
 }
 
 // initConfig wires Viper: it reads an optional config file and COMPUTAH_* env

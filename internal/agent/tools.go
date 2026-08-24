@@ -75,8 +75,8 @@ func registerTools(ts ...Tool) {
 }
 
 // unregisterTools removes tools by name from the registry and index — used
-// to suppress redundant tools (e.g. the file-layer vault tools when the MCP
-// vault server supersedes them). buildToolSchemas must be called after.
+// to suppress redundant tools (e.g. when an MCP server supersedes a
+// built-in tool). buildToolSchemas must be called after.
 func unregisterTools(names ...string) {
 	drop := map[string]bool{}
 	for _, n := range names {
@@ -625,7 +625,6 @@ func (s *Sandbox) Execute(name string, args map[string]any) (result string) {
 		return "ERROR: plan mode is read-only — no modifications until the user approves the plan. Include this step in the plan instead."
 	}
 	result = t.Handler(s, toolArgs(args))
-	recordActivity(name, args, result) // session audit tally (human monitoring; not sent to the model)
 	return result
 }
 

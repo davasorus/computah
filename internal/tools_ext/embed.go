@@ -1,21 +1,20 @@
-// Local semantic search — embeddings over the vault.
+// Local semantic search over the workdir's source code (code_search).
 //
 // Substring search fails exactly when memory does: you remember the
 // *concept* ("that clustering IP problem") but not the keyword
 // (RegisterAllProvidersIP). With an embedding model loaded in LM Studio and
-// "embed_model" set in config, vault_search gains a "related by meaning"
-// section powered by a local index.
+// "embed_model" set in config, code_search finds code by meaning.
 //
-// Design: notes are chunked by paragraph (~1200 chars), embedded via the
-// standard /v1/embeddings endpoint in batches, and cached in a gob file
-// under ~/.agent/index/ keyed by vault path. The index is INCREMENTAL:
-// each search rescans the vault by (path, mtime, size) and embeds only
-// new or changed chunks — a stable vault costs one query embedding per
-// search, nothing more. No vector database; at personal-vault scale a
-// linear cosine scan over a few thousand chunks is microseconds.
+// Design: source files are chunked (line-aware), embedded via the standard
+// /v1/embeddings endpoint in batches, and cached in a gob file under
+// ~/.agent/index/ keyed by workdir. The index is INCREMENTAL: each search
+// rescans the tree by (path, mtime, size) and embeds only new or changed
+// chunks — a stable tree costs one query embedding per search, nothing more.
+// No vector database; at personal-project scale a linear cosine scan over a
+// few thousand chunks is microseconds.
 //
-// Everything degrades: no embed_model configured → keyword search only,
-// silently. Embedding server errors → keyword results plus one dim note.
+// Degrades gracefully: no embed_model configured → code_search is not
+// registered. Embedding server errors → one dim note, no crash.
 package toolsext
 
 import (
@@ -37,19 +36,6 @@ import (
 
 // embedFn is swappable for tests.
 var embedFn = embedTexts
-
-type vaultChunk struct {
-	Path  string // relative to vault root
-	MTime int64
-	Size  int64
-	Text  string
-	Vec   []float32
-}
-
-type vaultIndex struct {
-	Model  string // index is invalid if the embed model changed
-	Chunks []vaultChunk
-}
 
 // embedTexts calls the OpenAI-compatible embeddings endpoint.
 func embedTexts(texts []string) ([][]float32, error) {
@@ -106,175 +92,12 @@ func cosine(a, b []float32) float64 {
 	return dot / (math.Sqrt(na) * math.Sqrt(nb))
 }
 
-// chunkNote splits markdown into ~maxChunk-char pieces on paragraph
-// boundaries — big enough to carry meaning, small enough to pinpoint.
-func chunkNote(text string) []string {
-	const maxChunk = 1200
-	paras := strings.Split(text, "\n\n")
-	var chunks []string
-	var cur strings.Builder
-	for _, p := range paras {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
-		}
-		if cur.Len() > 0 && cur.Len()+len(p) > maxChunk {
-			chunks = append(chunks, cur.String())
-			cur.Reset()
-		}
-		if cur.Len() > 0 {
-			cur.WriteString("\n\n")
-		}
-		// A single huge paragraph still gets split hard.
-		for len(p) > maxChunk {
-			chunks = append(chunks, p[:maxChunk])
-			p = p[maxChunk:]
-		}
-		cur.WriteString(p)
-	}
-	if strings.TrimSpace(cur.String()) != "" {
-		chunks = append(chunks, cur.String())
-	}
-	return chunks
-}
-
-func indexPath() string {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	h := sha256.Sum256([]byte(core.VaultPath))
-	dir := filepath.Join(home, ".agent", "index")
-	if os.MkdirAll(dir, 0o755) != nil {
-		return ""
-	}
-	return filepath.Join(dir, "vault-"+hex.EncodeToString(h[:8])+".gob")
-}
-
-func loadVaultIndex() *vaultIndex {
-	idx := &vaultIndex{Model: core.EmbedModel}
-	p := indexPath()
-	if p == "" {
-		return idx
-	}
-	f, err := os.Open(p)
-	if err != nil {
-		return idx
-	}
-	defer func() { _ = f.Close() }()
-	var loaded vaultIndex
-	if gob.NewDecoder(f).Decode(&loaded) == nil && loaded.Model == core.EmbedModel {
-		return &loaded
-	}
-	return idx // model changed or corrupt: rebuild from scratch
-}
-
-func saveVaultIndex(idx *vaultIndex) {
-	p := indexPath()
-	if p == "" {
-		return
-	}
-	var buf bytes.Buffer
-	if gob.NewEncoder(&buf).Encode(idx) != nil {
-		return
-	}
-	_ = os.WriteFile(p, buf.Bytes(), 0o644)
-}
-
-// ensureVaultIndex brings the index up to date with the vault: unchanged
-// files keep their vectors, new/changed files are re-chunked and embedded
-// (batched), deleted files drop out. Returns the fresh index.
-func ensureVaultIndex() (*vaultIndex, error) {
-	idx := loadVaultIndex()
-	// Existing chunks grouped by file identity.
-	byFile := map[string][]vaultChunk{}
-	for _, c := range idx.Chunks {
-		key := fmt.Sprintf("%s|%d|%d", c.Path, c.MTime, c.Size)
-		byFile[key] = append(byFile[key], c)
-	}
-	var fresh []vaultChunk
-	var pendingTexts []string
-	var pendingMeta []vaultChunk
-	for _, p := range vaultNotes() {
-		fi, err := os.Stat(p)
-		if err != nil {
-			continue
-		}
-		rel, _ := filepath.Rel(core.VaultPath, p)
-		key := fmt.Sprintf("%s|%d|%d", rel, fi.ModTime().Unix(), fi.Size())
-		if existing, ok := byFile[key]; ok {
-			fresh = append(fresh, existing...) // unchanged: keep vectors
-			continue
-		}
-		data, err := os.ReadFile(p)
-		if err != nil {
-			continue
-		}
-		for _, text := range chunkNote(string(data)) {
-			pendingTexts = append(pendingTexts, text)
-			pendingMeta = append(pendingMeta, vaultChunk{
-				Path: rel, MTime: fi.ModTime().Unix(), Size: fi.Size(), Text: text,
-			})
-		}
-	}
-	if len(pendingTexts) > 0 {
-		fmt.Println(core.Tint(core.ColorDim, fmt.Sprintf("  (indexing %d new/changed vault chunk(s) for semantic search)", len(pendingTexts))))
-		const batch = 32
-		for i := 0; i < len(pendingTexts); i += batch {
-			end := min(i+batch, len(pendingTexts))
-			vecs, err := embedFn(pendingTexts[i:end])
-			if err != nil {
-				return idx, err // keep the old index usable
-			}
-			for j, v := range vecs {
-				pendingMeta[i+j].Vec = v
-			}
-		}
-		fresh = append(fresh, pendingMeta...)
-	}
-	idx.Chunks = fresh
-	saveVaultIndex(idx)
-	return idx, nil
-}
-
-type semanticHit struct {
-	chunk vaultChunk
-	score float64
-}
-
-// semanticVaultHits returns the top-k chunks by meaning.
-func semanticVaultHits(query string, k int) ([]semanticHit, error) {
-	idx, err := ensureVaultIndex()
-	if err != nil {
-		return nil, err
-	}
-	if len(idx.Chunks) == 0 {
-		return nil, nil
-	}
-	qv, err := embedFn([]string{query})
-	if err != nil {
-		return nil, err
-	}
-	hits := make([]semanticHit, 0, len(idx.Chunks))
-	for _, c := range idx.Chunks {
-		if len(c.Vec) == 0 {
-			continue
-		}
-		hits = append(hits, semanticHit{c, cosine(qv[0], c.Vec)})
-	}
-	sort.Slice(hits, func(i, j int) bool { return hits[i].score > hits[j].score })
-	if len(hits) > k {
-		hits = hits[:k]
-	}
-	return hits, nil
-}
-
 // ---------- Codebase semantic search ----------
 //
 // search_files finds code by PATTERN; code_search finds it by MEANING:
 // "where do we retry failed connections" lands on the backoff loop even
-// though no line contains the word "retry". Same machinery as the vault
-// index — incremental by (path, mtime, size), gob-cached per workdir,
+// though no line contains the word "retry". Same machinery as the note
+// incremental by (path, mtime, size), gob-cached per workdir,
 // batched embeddings — with code-aware chunking that remembers line
 // numbers so hits are jump-to-able.
 
@@ -369,7 +192,7 @@ func codeIndexPath(root string) string {
 	return filepath.Join(dir, "code-"+hex.EncodeToString(h[:8])+".gob")
 }
 
-// ensureCodeIndex mirrors ensureVaultIndex for the workdir's source files.
+// ensureCodeIndex builds/updates the incremental embedding index for the workdir's source files.
 func ensureCodeIndex(root string) (*codeIndex, error) {
 	idx := &codeIndex{Model: core.EmbedModel}
 	if p := codeIndexPath(root); p != "" {

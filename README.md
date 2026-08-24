@@ -7,7 +7,8 @@ A self-hosted, terminal-based AI coding agent in Go. It runs against any
 OpenAI-compatible model server — a local one like [LM Studio](https://lmstudio.ai/)
 or [Ollama](https://ollama.com/) with no key required, or an authenticated
 cloud/gateway endpoint via an API key. It reads and edits code in a working
-directory, runs commands with approval, keeps resumable sessions, and extends
+directory, runs commands with approval, keeps resumable sessions, remembers
+across them via [engram](https://github.com/davasorus/engram), and extends
 itself with MCP tool servers.
 
 ## Install
@@ -28,13 +29,14 @@ computah exec "add a health endpoint" --yes    # one-shot, non-interactive
 computah eval cases.json --runs 3               # run an eval file
 computah dashboard --write                      # web dashboard (two-way)
 computah dashboard --headless                   # web-only, no terminal UI
+computah config init                            # create ~/.agent/config.json
+computah config add-mcp sandbox --command sandbox --arg mcp --prefer
 computah version
 ```
 
 `computah` with no subcommand is equivalent to `computah run`.
 
 ## AI Usage
-
 - This was created using a combination of Online Claude Code and offline [gemma-4-12B](https://huggingface.co/google/gemma-4-12B)
 
 ### Global flags
@@ -58,14 +60,135 @@ Two layers, both optional:
 - **CLI surface** (`url`, `model`) via Viper: a flag, a `COMPUTAH_URL` /
   `COMPUTAH_MODEL` env var, or `~/.agent/computah.yaml`.
 - **Agent behavior** (compaction, budgets, MCP servers, hooks, etc.) via the
-  agent's own `~/.agent/config.json`, unchanged. Set `price_in_per_m` /
-  `price_out_per_m` (USD per 1M tokens) to see an estimated session cost in
-  `/stats` when using a paid endpoint; local servers leave them unset. Set
-  `plan_model` to route `/plan` turns to a stronger model while normal
-  execution stays on the main (faster) model. Set `fast_model` to route
-  trivial follow-up turns (e.g. "continue", "commit that", "run the tests") to
-  a cheaper/faster model automatically; substantive turns stay on the main
-  model.
+  agent's own `~/.agent/config.json`.
+
+Copy [`config.example.json`](config.example.json) to `~/.agent/config.json`
+and keep only the fields you need — every field is optional and unknown keys
+(like the `"// ..."` comments in the example) are ignored, so defaults apply
+for anything you omit.
+
+### The `config` command
+
+You can manage the config without hand-editing JSON:
+
+```bash
+computah config path                 # print the config file location
+computah config init                 # create a starter config (--force to overwrite)
+computah config show                 # print the current effective config
+computah config get <key>            # print one value
+computah config set <key> <value>    # set a scalar (types inferred: 16384, true, "text")
+
+# MCP servers
+computah config add-mcp <name> --command <exe> --arg <a> --arg <b> [--prefer] [--prefer-hint "..."]
+computah config add-mcp <name> --url <url> --token <tok>
+computah config remove-mcp <name>
+
+# Hooks
+computah config set-hook <post_edit|pre_command|post_turn> "<command>"
+computah config remove-hook <name>
+```
+
+Writes are a typed round-trip — the file is rewritten as clean, indented JSON.
+If it contains keys the agent doesn't model (e.g. hand-added `"// comment"`
+keys), a `config.json.bak` backup is made first, so a rewrite never silently
+drops anything. `set` rejects unknown keys, so a typo can't corrupt the file.
+
+### `~/.agent/config.json` fields
+
+| Field | Default | Purpose |
+|-------|---------|---------|
+| `url`, `model`, `api_key` | auto / — | server URL, model id, Bearer token for authenticated endpoints |
+| `aux_model` | main model | smaller model for compaction, titles, commit messages |
+| `plan_model` | main model | stronger model for `/plan` turns |
+| `fast_model` | main model | cheaper model for trivial follow-ups ("continue", "commit that") |
+| `reasoning_effort` / `plan_reasoning_effort` | — | `low\|medium\|high` thinking budget for normal / `/plan` turns |
+| `price_in_per_m` / `price_out_per_m` | 0 (off) | USD per 1M tokens — enables session cost in `/stats` |
+| `compact_tokens` | model-based | context size at which history is compacted |
+| `max_tokens` | 8192 | per-generation output cap |
+| `max_turn_iters` | 40 | hard per-turn tool-call budget |
+| `command_timeout_sec` | 300 | `run_command` time limit |
+| `budget_minutes` / `budget_ktokens` | 0 (off) | warn past a wall-clock / token budget |
+| `protected` | built-in list | extra write-protected globs (e.g. `.env`, `secrets/*`) |
+| `verify_command` | — | command the agent can run to self-check (e.g. `go build ./... && go test ./...`) |
+| `no_checkpoints` | false | disable per-turn git snapshots |
+| `embed_model` | — | embedding model id → enables `code_search` (semantic code search) |
+| `notify_sec` | 10 | toast+bell for turns longer than this (0 = off) |
+| `hooks` | — | shell commands at lifecycle points (see below) |
+| `mcp_servers` | — | external tool servers (see below) |
+
+### Hooks
+
+`hooks` maps a lifecycle point to a shell command. `{file}` and `{cmd}` are
+substituted; a **nonzero `pre_command` exit blocks the command**.
+
+```json
+"hooks": {
+  "post_edit":   "gofmt -w {file}",
+  "pre_command": "true",
+  "post_turn":   "git status -sb"
+}
+```
+
+### MCP servers
+
+`mcp_servers` extends the agent with external [MCP](https://modelcontextprotocol.io/)
+tool servers over **stdio** (a child process) or **HTTP**. Set `prefer: true`
+to steer the model toward a server in the system prompt, and `prefer_hint` to
+describe *how* it should use a non-notes server.
+
+```json
+"mcp_servers": {
+  "sandbox": {
+    "command": "sandbox",
+    "args": ["mcp", "-image", "python:3-alpine"],
+    "prefer": true,
+    "prefer_hint": "Run untrusted or experimental code here, in an isolated container, rather than run_command."
+  },
+  "remote": {
+    "url": "https://mcp.example.com/sse",
+    "token": "your-token",
+    "headers": { "X-Extra": "value" }
+  }
+}
+```
+
+Per-server keys: `command`/`args`/`env` (stdio) or `url`/`token`/`headers`/`insecure`
+(HTTP); `no_prefix` registers tools under their own names; `prefer` / `prefer_hint`
+control system-prompt steering.
+
+## Memory
+
+computah's memory is [**engram**](https://github.com/davasorus/engram) — a
+self-hosted memory service (a brain, not a notes folder) that the agent talks
+to over MCP. It's how the agent recalls decisions, runbooks, and context across
+sessions and projects, and records durable conclusions as it works.
+
+engram is wired in like any other MCP server — there's nothing computah-specific
+to enable. Run engram (see its repo), then add it to `mcp_servers` in
+`~/.agent/config.json`:
+
+```json
+"mcp_servers": {
+  "engram": {
+    "url": "http://localhost:8088/mcp/",
+    "no_prefix": true,
+    "prefer": true,
+    "prefer_hint": "Use engram for durable memory: recall past decisions, runbooks, and context, and record significant conclusions."
+  }
+}
+```
+
+Or via the CLI:
+
+```bash
+computah config add-mcp engram --url http://localhost:8088/mcp/ \
+  --prefer --prefer-hint "Use engram for durable memory."
+```
+
+engram exposes `mem_search`, `mem_read`, `mem_write`, `mem_patch`, `mem_links`,
+`mem_list`, and `mem_delete`; `-stdio` transport is also available if you'd
+rather run it as a subprocess than an HTTP endpoint. `prefer: true` steers the
+model to reach for memory first; `no_prefix` keeps the tool names as-is.
 
 ## Layout
 
@@ -79,7 +202,7 @@ computah/
     md/                terminal markdown rendering
     tui/               full-screen Bubble Tea interface
     web/               read-only / two-way / headless web dashboard
-    tools_ext/         engine tool plug-ins (decision, edits, embeddings, vault)
+    tools_ext/         engine tool plug-ins (edits, embeddings/code_search, git)
 ```
 
 `core` imports nothing; `agent` builds on `core`; the presentation packages

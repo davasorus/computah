@@ -1,0 +1,64 @@
+{
+  "// note": "Copy to ~/.agent/config.json and delete the fields you don't need. Every field is optional; omit for defaults. Comment keys like this one are ignored.",
+
+  "url": "http://localhost:1234/v1",
+  "model": "your-model-id",
+  "aux_model": "a-smaller-model-for-titles-and-compaction",
+
+  "// paid endpoints only": "set these to see estimated session cost in /stats; leave unset for local servers",
+  "api_key": "",
+  "price_in_per_m": 0.0,
+  "price_out_per_m": 0.0,
+
+  "// model routing": "route certain turns to different models",
+  "plan_model": "a-stronger-model-for-/plan-turns",
+  "fast_model": "a-cheaper-model-for-trivial-follow-ups",
+  "reasoning_effort": "medium",
+  "plan_reasoning_effort": "high",
+
+  "// budgets & limits": "",
+  "compact_tokens": 0,
+  "max_tokens": 8192,
+  "max_turn_iters": 40,
+  "command_timeout_sec": 300,
+  "budget_minutes": 0,
+  "budget_ktokens": 0,
+
+  "// safety": "extra write-protected globs on top of the built-in list",
+  "protected": [".env", "secrets/*"],
+  "no_checkpoints": false,
+  "verify_command": "go build ./... && go test ./...",
+
+  "// code search": "embedding model id enables the code_search tool (semantic search over this workdir's source)",
+  "embed_model": "",
+
+  "// hooks": "shell commands run at lifecycle points; {file} and {cmd} are substituted. A nonzero pre_command exit BLOCKS the command.",
+  "hooks": {
+    "post_edit": "gofmt -w {file}",
+    "pre_command": "true",
+    "post_turn": "git status -sb"
+  },
+
+  "// mcp servers": "extend the agent with external tool servers over stdio or HTTP",
+  "mcp_servers": {
+    "sandbox": {
+      "command": "sandbox",
+      "args": ["mcp", "-image", "python:3-alpine"],
+      "prefer": true,
+      "prefer_hint": "Use the sandbox server to run untrusted or experimental code in an isolated container rather than run_command."
+    },
+    "engram": {
+      "url": "http://localhost:8088/mcp/",
+      "no_prefix": true,
+      "prefer": true,
+      "prefer_hint": "Use engram for durable memory: recall past decisions, runbooks, and context, and record significant conclusions."
+    },
+    "remote-example": {
+      "url": "https://mcp.example.com/sse",
+      "token": "your-token",
+      "headers": { "X-Extra": "value" },
+      "insecure": false,
+      "no_prefix": false
+    }
+  }
+}

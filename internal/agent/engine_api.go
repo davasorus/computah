@@ -184,7 +184,7 @@ func LookupTool(name string) (Tool, bool) { t, ok := toolByName[name]; return t,
 func DeleteTool(name string) { delete(toolByName, name) }
 
 // UnregisterTools removes tools by name from the registry (used by tests and
-// the vault-dedup path).
+// the tool-dedup path).
 func UnregisterTools(names ...string) { unregisterTools(names...) }
 
 // SetHooks replaces the lifecycle hooks map (used by tests).
