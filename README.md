@@ -28,6 +28,8 @@ computah exec "add a health endpoint" --yes    # one-shot, non-interactive
 computah eval cases.json --runs 3               # run an eval file
 computah dashboard --write                      # web dashboard (two-way)
 computah dashboard --headless                   # web-only, no terminal UI
+computah config init                            # create ~/.agent/config.json
+computah config add-mcp sandbox --command sandbox --arg mcp --prefer
 computah version
 ```
 
@@ -60,6 +62,32 @@ Copy [`config.example.json`](config.example.json) to `~/.agent/config.json`
 and keep only the fields you need — every field is optional and unknown keys
 (like the `"// ..."` comments in the example) are ignored, so defaults apply
 for anything you omit.
+
+### The `config` command
+
+You can manage the config without hand-editing JSON:
+
+```bash
+computah config path                 # print the config file location
+computah config init                 # create a starter config (--force to overwrite)
+computah config show                 # print the current effective config
+computah config get <key>            # print one value
+computah config set <key> <value>    # set a scalar (types inferred: 16384, true, "text")
+
+# MCP servers
+computah config add-mcp <name> --command <exe> --arg <a> --arg <b> [--prefer] [--prefer-hint "..."]
+computah config add-mcp <name> --url <url> --token <tok>
+computah config remove-mcp <name>
+
+# Hooks
+computah config set-hook <post_edit|pre_command|post_turn> "<command>"
+computah config remove-hook <name>
+```
+
+Writes are a typed round-trip — the file is rewritten as clean, indented JSON.
+If it contains keys the agent doesn't model (e.g. hand-added `"// comment"`
+keys), a `config.json.bak` backup is made first, so a rewrite never silently
+drops anything. `set` rejects unknown keys, so a typo can't corrupt the file.
 
 ### `~/.agent/config.json` fields
 

@@ -76,6 +76,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -287,6 +288,109 @@ func loadConfig() Config {
 	}
 	_ = json.Unmarshal(data, &c) // malformed config → zero value, harmless
 	return c
+}
+
+// ConfigPath returns the absolute path to the agent config file
+// (~/.agent/config.json), creating no files. It is the single source of truth
+// for the config location, used by both the agent and the `config` command.
+func ConfigPath() (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".agent", "config.json"), nil
+}
+
+// LoadConfigFrom reads and parses the config at ConfigPath. A missing file is
+// not an error — it returns a zero Config and found=false. A malformed file is
+// reported so the caller (the `config` command) can warn instead of silently
+// discarding it, unlike the agent's startup path which tolerates it.
+func LoadConfigFrom() (cfg Config, found bool, err error) {
+	p, err := ConfigPath()
+	if err != nil {
+		return Config{}, false, err
+	}
+	data, err := os.ReadFile(p)
+	if os.IsNotExist(err) {
+		return Config{}, false, nil
+	}
+	if err != nil {
+		return Config{}, false, err
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return Config{}, true, fmt.Errorf("parse %s: %w", p, err)
+	}
+	return cfg, true, nil
+}
+
+// configKnownKeys returns the set of json keys the Config struct understands.
+func configKnownKeys() map[string]bool {
+	known := map[string]bool{}
+	t := reflect.TypeOf(Config{})
+	for i := 0; i < t.NumField(); i++ {
+		tag := t.Field(i).Tag.Get("json")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		name := strings.SplitN(tag, ",", 2)[0]
+		if name != "" {
+			known[name] = true
+		}
+	}
+	return known
+}
+
+// unknownConfigKeys returns any top-level keys present in the on-disk config
+// that the Config struct does not model — hand-added comment keys ("// ..."),
+// or fields from a newer/older version. Used to decide whether a rewrite would
+// lose information and therefore needs a backup first.
+func unknownConfigKeys(data []byte) []string {
+	var raw map[string]json.RawMessage
+	if json.Unmarshal(data, &raw) != nil {
+		return nil
+	}
+	known := configKnownKeys()
+	var unknown []string
+	for k := range raw {
+		if !known[k] {
+			unknown = append(unknown, k)
+		}
+	}
+	sort.Strings(unknown)
+	return unknown
+}
+
+// SaveConfig writes cfg to ConfigPath as indented JSON, creating ~/.agent if
+// needed. If the existing file contains keys the struct doesn't model (e.g.
+// "// comment" keys or fields from another version), the current file is first
+// copied to <path>.bak so a clean rewrite never silently drops data. Returns
+// the backup path if one was made (else "").
+func SaveConfig(cfg Config) (backup string, err error) {
+	p, err := ConfigPath()
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return "", err
+	}
+	// Back up first if a rewrite would lose unmodeled keys.
+	if existing, readErr := os.ReadFile(p); readErr == nil {
+		if unknown := unknownConfigKeys(existing); len(unknown) > 0 {
+			backup = p + ".bak"
+			if err := os.WriteFile(backup, existing, 0o600); err != nil {
+				return "", fmt.Errorf("backup: %w", err)
+			}
+		}
+	}
+	out, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return backup, err
+	}
+	out = append(out, '\n')
+	if err := os.WriteFile(p, out, 0o600); err != nil {
+		return backup, err
+	}
+	return backup, nil
 }
 
 // gitContext returns a short repo-state summary for the system prompt, or ""

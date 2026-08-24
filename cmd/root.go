@@ -72,7 +72,7 @@ func init() {
 	_ = viper.BindPFlag("url", rootCmd.PersistentFlags().Lookup("url"))
 	_ = viper.BindPFlag("model", rootCmd.PersistentFlags().Lookup("model"))
 
-	rootCmd.AddCommand(runCmd, execCmd, evalCmd, dashboardCmd, versionCmd)
+	rootCmd.AddCommand(runCmd, execCmd, evalCmd, dashboardCmd, versionCmd, configCmd)
 }
 
 // initConfig wires Viper: it reads an optional config file and COMPUTAH_* env
