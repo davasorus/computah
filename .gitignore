@@ -13,3 +13,5 @@
 
 # local logs
 *.log
+
+*.bak
