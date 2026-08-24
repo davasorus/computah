@@ -13,7 +13,7 @@
 //
 //	"mcp_servers": {
 //	  "pg":    {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-postgres", "postgres://..."]},
-//	  "vault": {"url": "http://172.22.208.1:27123/mcp/", "token": "...", "no_prefix": true, "prefer": true},
+//	  "engram": {"url": "http://localhost:8080/mcp/", "token": "...", "no_prefix": true, "prefer": true},
 //	  "sbx":   {"command": "sandbox", "args": ["mcp", "-image", "python:3-alpine"], "prefer": true,
 //	           "prefer_hint": "a locked-down, network-less sandbox. Run untrusted or unfamiliar code here (sbx_run_script / sbx_run_sandbox) before running it on the host."}
 //	}
@@ -144,16 +144,6 @@ func startMCPServers(cfgs map[string]MCPServerConfig) func() {
 		connected[name] = true
 		fmt.Printf("mcp: %s connected — %d tool(s) registered\n", name, toolCount)
 	}
-	// If the MCP "vault" server connected, it supersedes the file-layer
-	// vault tools (vault_search/vault_read/vault_note) — they overlap and
-	// the near-identical names (vault_read vs vault_vault_read) confuse the
-	// model. Suppress the file-layer set so there's ONE vault interface.
-	// If the MCP vault server did NOT connect (down, or Obsidian closed),
-	// the file-layer tools remain as the offline fallback.
-	if connected["vault"] {
-		unregisterTools("vault_search", "vault_read", "vault_note")
-		fmt.Println("mcp: vault supersedes the file-layer vault tools (suppressed for a single interface)")
-	}
 	if len(servers) > 0 {
 		buildToolSchemas()
 	}
@@ -186,11 +176,11 @@ func startMCPServer(name string, cfg MCPServerConfig) (*mcpServer, int, error) {
 		transport = &mcp.StreamableClientTransport{
 			Endpoint:   strings.TrimRight(cfg.URL, "/"),
 			HTTPClient: httpClient,
-			// Obsidian's Local REST API MCP server is request-response and
-			// doesn't properly serve the optional standalone SSE GET stream;
-			// leaving it on caused the session to tear down between calls
-			// ("Server not initialized" on every tool call after connect).
-			// We don't need server-initiated messages, so disable it.
+			// Some MCP servers are request-response and don't properly serve
+			// the optional standalone SSE GET stream; leaving it on caused the
+			// session to tear down between calls ("Server not initialized" on
+			// every tool call after connect). We don't need server-initiated
+			// messages, so disable it.
 			DisableStandaloneSSE: true,
 		}
 	case cfg.Command != "":

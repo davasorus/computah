@@ -1,0 +1,11 @@
+Files DELETED when removing the vault/journal/audit features.
+Run these in the repo BEFORE extracting the tarball:
+
+  git rm internal/tools_ext/vault.go internal/tools_ext/vault_test.go
+  git rm internal/tools_ext/decision.go internal/tools_ext/decision_test.go
+  git rm internal/agent/audit.go internal/agent/audit_test.go
+  git rm internal/agent/vault.go internal/agent/journal_test.go
+  git rm internal/core/vault.go
+
+core/vault.go is REPLACED by core/embed.go (EmbedModel only).
+agent/vault.go's clip() helper moved to agent/strutil.go (new file).

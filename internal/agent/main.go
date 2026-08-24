@@ -155,24 +155,12 @@ func buildSystemPrompt(root string) string {
 		"a verify command may run automatically after turns that modify files, feeding failures back to you; edit results include a diff — read it. " +
 		"Slash commands (/plan, /commit, /rewind, …) are USER commands: you cannot invoke them; never claim to have run one. " +
 		"Repeating an identical read-only call is refused — reuse earlier results instead."
-	if core.VaultPath != "" {
-		s += "\n\nThe user's Obsidian knowledge vault is available: vault_search finds notes by content, " +
-			"vault_read fetches one by name (follow its [[wikilinks]] when relevant), and vault_note records " +
-			"durable decisions and runbooks into the vault's agent/ folder. Consult it when the user references " +
-			"their notes or past decisions; offer to record significant conclusions."
-	}
 	s += preferSteering()
 	s += "\n\nHarness facts (your runtime, not the project): every file you write or edit is backed up once per session " +
 		"(<file>.bak) and the user can /undo or /diff against it; a git checkpoint is taken before each of your turns and the user can /rewind; " +
 		"a verify command may run automatically after turns that modify files, feeding failures back to you; edit results include a diff — read it. " +
 		"Slash commands (/plan, /commit, /rewind, …) are USER commands: you cannot invoke them; never claim to have run one. " +
 		"Repeating an identical read-only call is refused — reuse earlier results instead."
-	if core.VaultPath != "" {
-		s += "\n\nThe user's Obsidian knowledge vault is available: vault_search finds notes by content, " +
-			"vault_read fetches one by name (follow its [[wikilinks]] when relevant), and vault_note records " +
-			"durable decisions and runbooks into the vault's agent/ folder. Consult it when the user references " +
-			"their notes or past decisions; offer to record significant conclusions."
-	}
 	if verifyCommand != "" {
 		s += fmt.Sprintf(
 			"\n\nAfter any turn in which you modify files, the harness automatically runs `%s` "+
@@ -255,8 +243,6 @@ type Config struct {
 	MaxTokens         int                        `json:"max_tokens,omitempty"`            // per-generation cap (default 8192)
 	MaxTurnIters      int                        `json:"max_turn_iters,omitempty"`        // hard per-turn tool-call budget (default 40)
 	Protected         []string                   `json:"protected,omitempty"`             // extra write-protected glob patterns (e.g. ".env", "secrets/*")
-	Journal           bool                       `json:"journal,omitempty"`               // append an aux-model session summary to <vault>/agent/journal.md on exit
-	Audit             bool                       `json:"audit,omitempty"`                 // write a structured session audit note to <vault>/agent/audit/ on exit
 	ContextV2         bool                       `json:"context_v2,omitempty"`            // distilled per-turn wire context (see context.go) — experimental
 	BudgetMinutes     int                        `json:"budget_minutes,omitempty"`        // warn when a session exceeds this wall-clock (0 = off)
 	BudgetKTokens     int                        `json:"budget_ktokens,omitempty"`        // warn when generated+reasoning tokens exceed this many thousand (0 = off)
@@ -266,8 +252,7 @@ type Config struct {
 	FastModel         string                     `json:"fast_model,omitempty"`            // cheaper/faster model for trivial follow-up turns (empty = always use the main model)
 	PriceInPerM       float64                    `json:"price_in_per_m,omitempty"`        // USD per 1M input (prompt) tokens — enables session cost in /stats (0 = off, e.g. local)
 	PriceOutPerM      float64                    `json:"price_out_per_m,omitempty"`       // USD per 1M output (generated+reasoning) tokens
-	VaultPath         string                     `json:"vault_path,omitempty"`            // Obsidian vault root — enables vault_search/read/note
-	EmbedModel        string                     `json:"embed_model,omitempty"`           // embedding model id — enables semantic vault search
+	EmbedModel        string                     `json:"embed_model,omitempty"`           // embedding model id — enables semantic code_search
 	ReasoningEffort   string                     `json:"reasoning_effort,omitempty"`      // low|medium|high — thinking budget for normal turns
 	PlanEffort        string                     `json:"plan_reasoning_effort,omitempty"` // thinking budget for /plan turns (deep thinking earns its time there)
 	NotifySec         *int                       `json:"notify_sec,omitempty"`            // toast+bell for turns longer than this (default 10; 0 = off)
@@ -498,8 +483,6 @@ func Run(opts Options) int {
 		maxTurnIters = cfg.MaxTurnIters
 	}
 	protectedPatterns = append(protectedPatterns, cfg.Protected...)
-	journalEnabled = cfg.Journal
-	auditEnabled = cfg.Audit
 	contextV2 = cfg.ContextV2
 	budgetMinutes = cfg.BudgetMinutes
 	budgetKTokens = cfg.BudgetKTokens
@@ -568,9 +551,8 @@ func Run(opts Options) int {
 	planModel = cfg.PlanModel                                     // stronger model for plan-mode turns (empty = use main model)
 	fastModel = cfg.FastModel                                     // cheaper model for trivial follow-up turns (empty = use main model)
 	priceInPerM, priceOutPerM = cfg.PriceInPerM, cfg.PriceOutPerM // cost estimation in /stats (0 = local/free, no cost shown)
-	core.VaultPath = cfg.VaultPath
-	core.EmbedModel = cfg.EmbedModel
-	runToolRegistrations() // decision/structured/embed tools, wired via cmd
+	core.EmbedModel = cfg.EmbedModel                              // embedding model for code_search
+	runToolRegistrations()                                        // decision/structured/embed tools, wired via cmd
 
 	// External MCP tool servers from config: each one's tools join the
 	// registry alongside the built-ins. Failures warn and continue — the
@@ -580,7 +562,7 @@ func Run(opts Options) int {
 	defer stopMCP()
 
 	// Command tools load LAST so their shadow-check sees every built-in,
-	// structured, embed, vault, MCP, and Obsidian tool already registered.
+	// structured, embed, MCP tools already registered.
 	loadCommandTools(root) // user tools from .agent/tools/*.json
 
 	// Stdin ownership and Ctrl+C handling start before ANY mode runs: a -p
@@ -986,8 +968,6 @@ func Run(opts Options) int {
 		if t := sessionTitle(st.Path()); t != "" {
 			fmt.Printf("titled: %q\n", t)
 		}
-		writeJournal(root, sessionTitle(st.Path()), messages) // vault diary (config "journal")
-		writeAuditNote(root, sessionTitle(st.Path()), sb)     // structured audit trail (config "audit")
 	}
 	return 0
 }

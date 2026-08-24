@@ -35,6 +35,9 @@ computah version
 
 `computah` with no subcommand is equivalent to `computah run`.
 
+## AI Usage
+- This was created using a combination of Online Claude Code and offline [gemma-4-12B](https://huggingface.co/google/gemma-4-12B)
+
 ### Global flags
 
 | Flag | Meaning |
@@ -107,8 +110,7 @@ drops anything. `set` rejects unknown keys, so a typo can't corrupt the file.
 | `protected` | built-in list | extra write-protected globs (e.g. `.env`, `secrets/*`) |
 | `verify_command` | — | command the agent can run to self-check (e.g. `go build ./... && go test ./...`) |
 | `no_checkpoints` | false | disable per-turn git snapshots |
-| `journal` / `audit` | false | write a session summary / structured audit note on exit |
-| `vault_path` / `embed_model` | — | Obsidian vault root (+ embedding model) → `vault_search/read/note` |
+| `embed_model` | — | embedding model id → enables `code_search` (semantic code search) |
 | `notify_sec` | 10 | toast+bell for turns longer than this (0 = off) |
 | `hooks` | — | shell commands at lifecycle points (see below) |
 | `mcp_servers` | — | external tool servers (see below) |
@@ -165,7 +167,7 @@ computah/
     md/                terminal markdown rendering
     tui/               full-screen Bubble Tea interface
     web/               read-only / two-way / headless web dashboard
-    tools_ext/         engine tool plug-ins (decision, edits, embeddings, vault)
+    tools_ext/         engine tool plug-ins (edits, embeddings/code_search, git)
 ```
 
 `core` imports nothing; `agent` builds on `core`; the presentation packages

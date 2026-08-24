@@ -56,10 +56,8 @@ func init() {
 	// Wire the out-of-engine tool packages into the engine's registration
 	// hook so they load at startup without the engine importing them.
 	agent.ToolRegistrations = append(agent.ToolRegistrations,
-		toolsext.RegisterDecisionTool,
 		toolsext.RegisterEmbedTools,
 		toolsext.RegisterStructuredTools,
-		toolsext.RegisterVaultTools,
 		toolsext.RegisterGitTools,
 	)
 

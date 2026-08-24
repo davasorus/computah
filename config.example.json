@@ -29,12 +29,7 @@
   "no_checkpoints": false,
   "verify_command": "go build ./... && go test ./...",
 
-  "// session records": "",
-  "journal": false,
-  "audit": false,
-
-  "// obsidian vault": "enables vault_search/read/note; embed_model adds semantic search",
-  "vault_path": "",
+  "// code search": "embedding model id enables the code_search tool (semantic search over this workdir's source)",
   "embed_model": "",
 
   "// hooks": "shell commands run at lifecycle points; {file} and {cmd} are substituted. A nonzero pre_command exit BLOCKS the command.",
@@ -52,11 +47,12 @@
       "prefer": true,
       "prefer_hint": "Use the sandbox server to run untrusted or experimental code in an isolated container rather than run_command."
     },
-    "notes": {
-      "command": "some-notes-mcp-server",
-      "args": [],
-      "env": { "NOTES_DIR": "/home/you/notes" },
-      "prefer": true
+    "engram": {
+      "url": "http://localhost:8080/mcp/",
+      "token": "your-engram-token",
+      "no_prefix": true,
+      "prefer": true,
+      "prefer_hint": "Use engram for durable memory: recall past decisions, runbooks, and context, and record significant conclusions."
     },
     "remote-example": {
       "url": "https://mcp.example.com/sse",
