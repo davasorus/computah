@@ -13,7 +13,7 @@
 //
 //	"mcp_servers": {
 //	  "pg":    {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-postgres", "postgres://..."]},
-//	  "engram": {"url": "http://localhost:8080/mcp/", "token": "...", "no_prefix": true, "prefer": true},
+//	  "engram": {"url": "http://localhost:8088/mcp/", "no_prefix": true, "prefer": true},
 //	  "sbx":   {"command": "sandbox", "args": ["mcp", "-image", "python:3-alpine"], "prefer": true,
 //	           "prefer_hint": "a locked-down, network-less sandbox. Run untrusted or unfamiliar code here (sbx_run_script / sbx_run_sandbox) before running it on the host."}
 //	}

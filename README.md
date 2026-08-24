@@ -7,7 +7,8 @@ A self-hosted, terminal-based AI coding agent in Go. It runs against any
 OpenAI-compatible model server — a local one like [LM Studio](https://lmstudio.ai/)
 or [Ollama](https://ollama.com/) with no key required, or an authenticated
 cloud/gateway endpoint via an API key. It reads and edits code in a working
-directory, runs commands with approval, keeps resumable sessions, and extends
+directory, runs commands with approval, keeps resumable sessions, remembers
+across them via [engram](https://github.com/davasorus/engram), and extends
 itself with MCP tool servers.
 
 ## Install
@@ -154,6 +155,40 @@ describe *how* it should use a non-notes server.
 Per-server keys: `command`/`args`/`env` (stdio) or `url`/`token`/`headers`/`insecure`
 (HTTP); `no_prefix` registers tools under their own names; `prefer` / `prefer_hint`
 control system-prompt steering.
+
+## Memory
+
+computah's memory is [**engram**](https://github.com/davasorus/engram) — a
+self-hosted memory service (a brain, not a notes folder) that the agent talks
+to over MCP. It's how the agent recalls decisions, runbooks, and context across
+sessions and projects, and records durable conclusions as it works.
+
+engram is wired in like any other MCP server — there's nothing computah-specific
+to enable. Run engram (see its repo), then add it to `mcp_servers` in
+`~/.agent/config.json`:
+
+```json
+"mcp_servers": {
+  "engram": {
+    "url": "http://localhost:8088/mcp/",
+    "no_prefix": true,
+    "prefer": true,
+    "prefer_hint": "Use engram for durable memory: recall past decisions, runbooks, and context, and record significant conclusions."
+  }
+}
+```
+
+Or via the CLI:
+
+```bash
+computah config add-mcp engram --url http://localhost:8088/mcp/ \
+  --prefer --prefer-hint "Use engram for durable memory."
+```
+
+engram exposes `mem_search`, `mem_read`, `mem_write`, `mem_patch`, `mem_links`,
+`mem_list`, and `mem_delete`; `-stdio` transport is also available if you'd
+rather run it as a subprocess than an HTTP endpoint. `prefer: true` steers the
+model to reach for memory first; `no_prefix` keeps the tool names as-is.
 
 ## Layout
 

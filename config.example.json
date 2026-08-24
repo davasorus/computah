@@ -48,8 +48,7 @@
       "prefer_hint": "Use the sandbox server to run untrusted or experimental code in an isolated container rather than run_command."
     },
     "engram": {
-      "url": "http://localhost:8080/mcp/",
-      "token": "your-engram-token",
+      "url": "http://localhost:8088/mcp/",
       "no_prefix": true,
       "prefer": true,
       "prefer_hint": "Use engram for durable memory: recall past decisions, runbooks, and context, and record significant conclusions."
