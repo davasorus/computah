@@ -33,6 +33,10 @@ computah version
 
 `computah` with no subcommand is equivalent to `computah run`.
 
+## AI Usage
+
+- This was created using a combination of Online Claude Code and offline [gemma-4-12B](https://huggingface.co/google/gemma-4-12B)
+
 ### Global flags
 
 | Flag | Meaning |
