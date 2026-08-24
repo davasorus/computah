@@ -734,7 +734,7 @@ func Run(opts Options) int {
 				fmt.Println("reasoning_effort no longer sent — server default applies")
 			case "low", "medium", "high":
 				reasoningEffort = arg
-				fmt.Printf("reasoning effort → %s (takes effect next request)\n", arg)
+				fmt.Printf("reasoning effort → %s (takes effect next request)\n", core.LogSafe(arg))
 			default:
 				fmt.Println("usage: /effort [low|medium|high|off]")
 			}
@@ -769,7 +769,7 @@ func Run(opts Options) int {
 				fmt.Println("fork:", err)
 				continue
 			}
-			fmt.Printf("forked — now writing to %s; the original session is frozen (return to it with /resume)\n", name)
+			fmt.Printf("forked — now writing to %s; the original session is frozen (return to it with /resume)\n", core.LogSafe(name))
 			continue
 		}
 		if input == "/reload" {
@@ -906,11 +906,11 @@ func Run(opts Options) int {
 		} else if strings.HasPrefix(input, "/") {
 			name, _, _ := strings.Cut(strings.TrimPrefix(input, "/"), " ")
 			if _, isCustom := customCommands[name]; isCustom {
-				fmt.Printf("/%s requires arguments — usage: /%s <args>\n", name, name)
+				fmt.Printf("/%s requires arguments — usage: /%s <args>\n", core.LogSafe(name), core.LogSafe(name))
 				continue
 			}
 			if !isBuiltinCommand(name) {
-				fmt.Printf("unknown command /%s — /help lists commands\n", name)
+				fmt.Printf("unknown command /%s — /help lists commands\n", core.LogSafe(name))
 				continue
 			}
 		}
@@ -1177,12 +1177,12 @@ func handleDiff(sb *Sandbox, arg string) {
 	for p := range paths {
 		safeCur, err := core.ConfinePath(sb.Root, p)
 		if err != nil {
-			fmt.Printf("diff: %s: %v\n", p, err)
+			fmt.Printf("diff: %s: %v\n", core.LogSafe(p), err)
 			continue
 		}
 		safeBak, err := core.ConfinePath(sb.Root, p+".bak")
 		if err != nil {
-			fmt.Printf("diff: %s.bak: %v\n", p, err)
+			fmt.Printf("diff: %s.bak: %v\n", core.LogSafe(p), err)
 			continue
 		}
 		oldData, err := os.ReadFile(safeBak)
@@ -1192,15 +1192,15 @@ func handleDiff(sb *Sandbox, arg string) {
 		}
 		curData, err := os.ReadFile(safeCur)
 		if err != nil {
-			fmt.Printf("diff: %s: %v\n", p, err)
+			fmt.Printf("diff: %s: %v\n", core.LogSafe(p), err)
 			continue
 		}
 		hunks := diffLines(string(oldData), string(curData))
 		if len(hunks) == 0 {
-			fmt.Printf("%s: no changes vs session start\n", p)
+			fmt.Printf("%s: no changes vs session start\n", core.LogSafe(p))
 			continue
 		}
-		fmt.Println(tint(cCyan, "  "+p+" (vs pre-session .bak)"))
+		fmt.Println(tint(cCyan, "  "+core.LogSafe(p)+" (vs pre-session .bak)"))
 		fmt.Print(renderDiff(hunks, useColor, 400))
 	}
 }
@@ -1218,7 +1218,7 @@ func handleUndo(sb *Sandbox, arg string) {
 		for _, p := range sb.Modified {
 			if !seen[p] {
 				seen[p] = true
-				fmt.Println("  " + p)
+				fmt.Println("  " + core.LogSafe(p))
 			}
 		}
 		return
@@ -1230,14 +1230,14 @@ func handleUndo(sb *Sandbox, arg string) {
 	}
 	bak, err := os.ReadFile(path + ".bak")
 	if err != nil {
-		fmt.Printf("undo: no backup at %s.bak\n", path)
+		fmt.Printf("undo: no backup at %s.bak\n", core.LogSafe(path))
 		return
 	}
 	if err := writeAtomic(path, bak); err != nil {
 		fmt.Println("undo:", err)
 		return
 	}
-	fmt.Printf("restored %s from %s.bak (%d bytes)\n", path, path, len(bak))
+	fmt.Printf("restored %s from %s.bak (%d bytes)\n", core.LogSafe(path), core.LogSafe(path), len(bak))
 }
 
 // handleAllow implements /allow: with no argument it lists the effective
@@ -1247,7 +1247,7 @@ func handleAllow(arg string) {
 	if arg == "" {
 		fmt.Println("auto-approved (built-in prefixes):")
 		for _, p := range autoApprovedPrefixes {
-			fmt.Println("  " + p)
+			fmt.Println("  " + core.LogSafe(p))
 		}
 		fmt.Println("auto-approved (built-in exact):")
 		for _, e := range autoApprovedExact {
@@ -1260,7 +1260,7 @@ func handleAllow(arg string) {
 		}
 		fmt.Printf("user prefixes (%s):\n", allowFile())
 		for _, p := range user {
-			fmt.Println("  " + p)
+			fmt.Println("  " + core.LogSafe(p))
 		}
 		return
 	}
@@ -1268,7 +1268,7 @@ func handleAllow(arg string) {
 		fmt.Println("error:", msg)
 		return
 	}
-	fmt.Printf("added to allowlist: %q (effective immediately; edit %s to remove)\n", arg, allowFile())
+	fmt.Printf("added to allowlist: %q (effective immediately; edit %s to remove)\n", core.LogSafe(arg), allowFile())
 }
 
 // tail returns the last n bytes of s (for showing the end of long output,

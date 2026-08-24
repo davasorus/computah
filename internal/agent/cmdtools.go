@@ -43,6 +43,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/davasorus/computah/internal/core"
 )
 
 type cmdToolParam struct {
@@ -85,15 +87,15 @@ func loadCommandTools(root string) {
 			}
 			var m cmdToolManifest
 			if err := json.Unmarshal(data, &m); err != nil {
-				fmt.Printf("command tool %s: bad manifest (%v) — skipped\n", e.Name(), err)
+				fmt.Printf("command tool %s: bad manifest (%v) — skipped\n", core.LogSafe(e.Name()), err)
 				continue
 			}
 			if m.Name == "" || len(m.Command) == 0 {
-				fmt.Printf("command tool %s: needs a name and a non-empty command — skipped\n", e.Name())
+				fmt.Printf("command tool %s: needs a name and a non-empty command — skipped\n", core.LogSafe(e.Name()))
 				continue
 			}
 			if _, isBuiltin := toolByName[m.Name]; isBuiltin && !loaded[m.Name] {
-				fmt.Printf("command tool %q ignored — shadows a built-in tool\n", m.Name)
+				fmt.Printf("command tool %q ignored — shadows a built-in tool\n", core.LogSafe(m.Name))
 				continue
 			}
 			registerTools(makeCommandTool(m, root))
@@ -173,13 +175,13 @@ func runCommandTool(s *Sandbox, m cmdToolManifest, root string, timeout time.Dur
 	// Non-read-only command tools need approval, same gate as run_command.
 	display := strings.Join(argv, " ")
 	if !m.ReadOnly {
-		fmt.Println(tint(cCyan, "  ⚙ "+m.Name+": "+display))
+		fmt.Println(tint(cCyan, "  ⚙ "+core.LogSafe(m.Name)+": "+core.LogSafe(display)))
 		notifyApproval("run command tool: " + m.Name)
 		if approvals.request("    run this command tool? [y/N] ", m.Name) == approveDeny {
 			return "User declined to run the command tool " + m.Name + "."
 		}
 	} else {
-		fmt.Println(tint(cDim, "  ⚙ "+m.Name+" (read-only)"))
+		fmt.Println(tint(cDim, "  ⚙ "+core.LogSafe(m.Name)+" (read-only)"))
 	}
 
 	// Provide args as JSON on stdin as well, for scripts that prefer it.

@@ -112,7 +112,7 @@ func toolEditFiles(s *agent.Sandbox, a agent.ToolArgs) string {
 		}
 		s.Modified = append(s.Modified, abs)
 		rel, _ := filepath.Rel(s.Root, abs)
-		fmt.Println(core.Tint(core.ColorYellow, "  ✏ EDITED "+rel+" (atomic set)"))
+		fmt.Println(core.Tint(core.ColorYellow, "  ✏ EDITED "+core.LogSafe(rel)+" (atomic set)"))
 		if out, ok := agent.RunHook("post_edit", map[string]string{"file": abs}); !ok {
 			fmt.Fprintf(&b, "post_edit hook failed for %s:\n%s\n", rel, agent.Tail(out, 512))
 		}
@@ -178,7 +178,7 @@ func toolRenameSymbol(s *agent.Sandbox, a agent.ToolArgs) string {
 	// Mark the whole workspace dirty conservatively so /diff and verify see
 	// it. (We can't know exactly which files gopls touched without -d
 	// parsing; the git checkpoint taken before the turn is the safety net.)
-	fmt.Println(core.Tint(core.ColorYellow, fmt.Sprintf("  ✏ RENAMED %s → %s (gopls, workspace-wide)", sym, newName)))
+	fmt.Println(core.Tint(core.ColorYellow, fmt.Sprintf("  ✏ RENAMED %s → %s (gopls, workspace-wide)", core.LogSafe(sym), core.LogSafe(newName))))
 	msg := strings.TrimSpace(string(out))
 	if msg == "" {
 		msg = "renamed across the workspace"

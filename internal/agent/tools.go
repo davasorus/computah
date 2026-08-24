@@ -621,7 +621,7 @@ func (s *Sandbox) Execute(name string, args map[string]any) (result string) {
 		return "ERROR: unknown tool " + name
 	}
 	if planMode && !readOnlyTools[name] && name != "update_todos" {
-		fmt.Println(tint(cYellow, "  ✗ blocked (plan mode): "+name))
+		fmt.Println(tint(cYellow, "  ✗ blocked (plan mode): "+core.LogSafe(name)))
 		return "ERROR: plan mode is read-only — no modifications until the user approves the plan. Include this step in the plan instead."
 	}
 	result = t.Handler(s, toolArgs(args))
@@ -667,26 +667,26 @@ func (s *Sandbox) toolReadFile(a toolArgs) string {
 func (s *Sandbox) toolWriteFile(a toolArgs) string {
 	rel := a.str("path")
 	if isProtected(rel) {
-		fmt.Println(tint(cRed, "  ✗ REJECTED write to "+rel+" (protected path)"))
+		fmt.Println(tint(cRed, "  ✗ REJECTED write to "+core.LogSafe(rel)+" (protected path)"))
 		return "ERROR: " + rel + " matches a protected pattern (key material / user-configured). The agent may not write it; ask the user to change it themselves if needed."
 	}
 	// Models sometimes try to "create a directory" by writing a bare
 	// directory path; that creates a file that then blocks the real
 	// writes, so reject it with a corrective message.
 	if strings.HasSuffix(rel, "/") || strings.HasSuffix(rel, "\\") {
-		fmt.Println(tint(cRed, fmt.Sprintf("  ✗ REJECTED write to %s (directory path)", rel)))
+		fmt.Println(tint(cRed, fmt.Sprintf("  ✗ REJECTED write to %s (directory path)", core.LogSafe(rel))))
 		return "ERROR: path is a directory. Directories are created automatically when you write a file inside them; write a file instead."
 	}
 	// Empty or placeholder content is a hallucination tripwire.
 	content := a.str("content")
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" || (strings.HasPrefix(trimmed, "<") && strings.HasSuffix(trimmed, ">") && !strings.Contains(trimmed, "\n")) {
-		fmt.Println(tint(cRed, fmt.Sprintf("  ✗ REJECTED write to %s (empty/placeholder content)", rel)))
+		fmt.Println(tint(cRed, fmt.Sprintf("  ✗ REJECTED write to %s (empty/placeholder content)", core.LogSafe(rel))))
 		return "ERROR: empty or placeholder content rejected. Write the file's FULL, final content."
 	}
 	path, err := s.resolve(rel)
 	if err != nil {
-		fmt.Println(tint(cRed, fmt.Sprintf("  ✗ REJECTED write to %s (%v)", rel, err)))
+		fmt.Println(tint(cRed, fmt.Sprintf("  ✗ REJECTED write to %s (%v)", core.LogSafe(rel), err)))
 		return "ERROR: " + err.Error()
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -1244,14 +1244,14 @@ func (s *Sandbox) toolRunCommand(a toolArgs) string {
 	// Human in the loop: mutating commands need explicit approval.
 	// Read-only commands on the allowlist run without the prompt.
 	if builtinAutoApproved(cmdStr) {
-		fmt.Println(tint(cDim, fmt.Sprintf("  $ %s (auto-approved: read-only)", cmdStr)))
+		fmt.Println(tint(cDim, fmt.Sprintf("  $ %s (auto-approved: read-only)", core.LogSafe(cmdStr))))
 	} else if autoApproved(cmdStr) {
-		fmt.Println(tint(cDim, fmt.Sprintf("  $ %s (auto-approved: on your allowlist)", cmdStr)))
+		fmt.Println(tint(cDim, fmt.Sprintf("  $ %s (auto-approved: on your allowlist)", core.LogSafe(cmdStr))))
 	} else if assumeYes {
-		fmt.Println(tint(cDim, fmt.Sprintf("  $ %s (auto-approved: -yes)", cmdStr)))
+		fmt.Println(tint(cDim, fmt.Sprintf("  $ %s (auto-approved: -yes)", core.LogSafe(cmdStr))))
 	} else {
 		tok := strings.Fields(cmdStr)[0]
-		fmt.Println(tint(cCyan, "  $ "+cmdStr))
+		fmt.Println(tint(cCyan, "  $ "+core.LogSafe(cmdStr)))
 		notifyApproval("run: " + cmdStr)
 		prompt := fmt.Sprintf("    run this in %s? [y/N/a=always allow %q] ", s.Root, tok)
 		switch approvals.request(prompt, tok) {
