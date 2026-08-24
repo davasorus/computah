@@ -33,10 +33,6 @@ computah version
 
 `computah` with no subcommand is equivalent to `computah run`.
 
-## AI Usage
-
-- This was created using a combination of Online Claude Code and offline [gemma-4-12B](https://huggingface.co/google/gemma-4-12B)
-
 ### Global flags
 
 | Flag | Meaning |
@@ -58,14 +54,76 @@ Two layers, both optional:
 - **CLI surface** (`url`, `model`) via Viper: a flag, a `COMPUTAH_URL` /
   `COMPUTAH_MODEL` env var, or `~/.agent/computah.yaml`.
 - **Agent behavior** (compaction, budgets, MCP servers, hooks, etc.) via the
-  agent's own `~/.agent/config.json`, unchanged. Set `price_in_per_m` /
-  `price_out_per_m` (USD per 1M tokens) to see an estimated session cost in
-  `/stats` when using a paid endpoint; local servers leave them unset. Set
-  `plan_model` to route `/plan` turns to a stronger model while normal
-  execution stays on the main (faster) model. Set `fast_model` to route
-  trivial follow-up turns (e.g. "continue", "commit that", "run the tests") to
-  a cheaper/faster model automatically; substantive turns stay on the main
-  model.
+  agent's own `~/.agent/config.json`.
+
+Copy [`config.example.json`](config.example.json) to `~/.agent/config.json`
+and keep only the fields you need — every field is optional and unknown keys
+(like the `"// ..."` comments in the example) are ignored, so defaults apply
+for anything you omit.
+
+### `~/.agent/config.json` fields
+
+| Field | Default | Purpose |
+|-------|---------|---------|
+| `url`, `model`, `api_key` | auto / — | server URL, model id, Bearer token for authenticated endpoints |
+| `aux_model` | main model | smaller model for compaction, titles, commit messages |
+| `plan_model` | main model | stronger model for `/plan` turns |
+| `fast_model` | main model | cheaper model for trivial follow-ups ("continue", "commit that") |
+| `reasoning_effort` / `plan_reasoning_effort` | — | `low\|medium\|high` thinking budget for normal / `/plan` turns |
+| `price_in_per_m` / `price_out_per_m` | 0 (off) | USD per 1M tokens — enables session cost in `/stats` |
+| `compact_tokens` | model-based | context size at which history is compacted |
+| `max_tokens` | 8192 | per-generation output cap |
+| `max_turn_iters` | 40 | hard per-turn tool-call budget |
+| `command_timeout_sec` | 300 | `run_command` time limit |
+| `budget_minutes` / `budget_ktokens` | 0 (off) | warn past a wall-clock / token budget |
+| `protected` | built-in list | extra write-protected globs (e.g. `.env`, `secrets/*`) |
+| `verify_command` | — | command the agent can run to self-check (e.g. `go build ./... && go test ./...`) |
+| `no_checkpoints` | false | disable per-turn git snapshots |
+| `journal` / `audit` | false | write a session summary / structured audit note on exit |
+| `vault_path` / `embed_model` | — | Obsidian vault root (+ embedding model) → `vault_search/read/note` |
+| `notify_sec` | 10 | toast+bell for turns longer than this (0 = off) |
+| `hooks` | — | shell commands at lifecycle points (see below) |
+| `mcp_servers` | — | external tool servers (see below) |
+
+### Hooks
+
+`hooks` maps a lifecycle point to a shell command. `{file}` and `{cmd}` are
+substituted; a **nonzero `pre_command` exit blocks the command**.
+
+```json
+"hooks": {
+  "post_edit":   "gofmt -w {file}",
+  "pre_command": "true",
+  "post_turn":   "git status -sb"
+}
+```
+
+### MCP servers
+
+`mcp_servers` extends the agent with external [MCP](https://modelcontextprotocol.io/)
+tool servers over **stdio** (a child process) or **HTTP**. Set `prefer: true`
+to steer the model toward a server in the system prompt, and `prefer_hint` to
+describe *how* it should use a non-notes server.
+
+```json
+"mcp_servers": {
+  "sandbox": {
+    "command": "sandbox",
+    "args": ["mcp", "-image", "python:3-alpine"],
+    "prefer": true,
+    "prefer_hint": "Run untrusted or experimental code here, in an isolated container, rather than run_command."
+  },
+  "remote": {
+    "url": "https://mcp.example.com/sse",
+    "token": "your-token",
+    "headers": { "X-Extra": "value" }
+  }
+}
+```
+
+Per-server keys: `command`/`args`/`env` (stdio) or `url`/`token`/`headers`/`insecure`
+(HTTP); `no_prefix` registers tools under their own names; `prefer` / `prefer_hint`
+control system-prompt steering.
 
 ## Layout
 
