@@ -1,7 +1,6 @@
 package agent
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,105 +10,74 @@ import (
 
 func TestShrinkOldToolResultsBoundaries(t *testing.T) {
 	// test exactly at the threshold boundary (2048 bytes)
-	msg := Message{Role: "tool", ToolCallID: "r1", Content: strings.Repeat("a", 2048)}
-	msgs := []Message{
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r1", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}},
-		msg,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r2", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}}},
+	msg1 := Message{Role: "tool", ToolCallID: "r1", Content: strings.Repeat("a", 2048)}
+	msgs1 := []Message{
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r1", Type: "function"}}},
+		msg1,
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r2", Type: "function"}}},
 		{Role: "tool", ToolCallID: "r2", Content: "ok"},
 	}
-	// The first msg's content is exactly 2048.
-	// Since the threshold logic uses `len(content) > threshold`, it should NOT be shrunk yet.
-	_ = shrinkOldToolResults(msgs)
-	if len(msgs[1].Content) != 2048 {
-		t.Errorf("expected length 2048, got %d", len(msgs[1].Content))
+
+	_ = shrinkOldToolResults(msgs1)
+	if len(msgs1[1].Content) != 2048 {
+		t.Errorf("expected length 2048, got %d", len(msgs1[1].Content))
 	}
 
 	// test just over the threshold boundary (2049 bytes)
-	msg = Message{Role: "tool", ToolCallID: "r3", Content: strings.Repeat("a", 2049)}
-	msgs = []Message{
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r3", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}}},
-		msg,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r4", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}}},
+	msg2 := Message{Role: "tool", ToolCallID: "r3", Content: strings.Repeat("a", 2049)}
+	msgs2 := []Message{
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r3", Type: "function"}}},
+		msg2,
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r4", Type: "function"}}},
 		{Role: "tool", ToolCallID: "r4", Content: "ok"},
 	}
-	// The second msg's content is 2049. It should be shrunk if it's not the latest.
-	_ = shrinkOldToolResults(msgs)
-	if len(msgs[1].Content) >= 2048 {
-		t.Errorf("expected content to be truncated, but got length %d", len(msgs[1].Content))
+	_ = shrinkOldToolResults(msgs2)
+	if len(msgs2[1].Content) >= 2048 {
+		t.Errorf("expected content to be truncated, but got length %d", len(msgs2[1].Content))
 	}
 
 	// test complex scenario: multiple tool results with different ages and sizes
-	msg1 := Message{Role: "tool", ToolCallID: "r1", Content: strings.Repeat("a", 3000)} // Old, Large
-	msg2 := Message{Role: "tool", ToolCallID: "r2", Content: strings.Repeat("a", 3000)} // Old, Large
-	msg3 := Message{Role: "tool", ToolCallID: "r3", Content: strings.Repeat("a", 1000)} // Old, Small
-	msg4 := Message{Role: "tool", ToolCallID: "r4", Content: strings.Repeat("a", 2048)} // Recent, Large (at threshold)
-	msg5 := Message{Role: "tool", ToolCallID: "r5", Content: strings.Repeat("a", 3000)} // Recent, Large
-	msg6 := Message{Role: "tool", ToolCallID: "r6", Content: strings.Repeat("a", 3000)} // Recent, Large
+	m1 := Message{Role: "tool", ToolCallID: "r1", Content: strings.Repeat("a", 3000)} // Old, Large
+	m2 := Message{Role: "tool", ToolCallID: "r2", Content: strings.Repeat("a", 3000)} // Old, Large
+	m3 := Message{Role: "tool", ToolCallID: "r3", Content: strings.Repeat("a", 1000)} // Old, Small
+	m4 := Message{Role: "tool", ToolCallID: "r4", Content: strings.Repeat("a", 2048)} // Recent, Large (at threshold)
+	m5 := Message{Role: "tool", ToolCallID: "r5", Content: strings.Repeat("a", 3000)} // Recent, Large
+	m6 := Message{Role: "tool", ToolCallID: "r6", Content: strings.Repeat("a", 3000)} // Recent, Large
 
-	msgs = []Message{
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r1", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}}},
-		msg1,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r2", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}}},
-		msg2,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r3", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}}},
-		msg3,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r4", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}}},
-		msg4,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r5", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}}},
-		msg5,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r6", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}}},
-		msg6,
+	msgs3 := []Message{
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r1", Type: "function"}}},
+		m1,
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r2", Type: "function"}}},
+		m2,
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r3", Type: "function"}}},
+		m3,
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r4", Type: "function"}}},
+		m4,
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r5", Type: "function"}}},
+		m5,
+		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r6", Type: "function"}}},
+		m6,
 	}
-	_ = shrinkOldToolResults(msgs)
 
-	if len(msgs[1].Content) > 2048 {
-		t.Errorf("expected msg1 (old, large) to be truncated, but got length %d", len(msgs[1].Content))
+	_ = shrinkOldToolResults(msgs3)
+
+	if len(msgs3[1].Content) > 2048 {
+		t.Errorf("expected msg1 (old, large) to be truncated, but got length %d", len(msgs3[1].Content))
 	}
-	if len(msgs[2].Content) > 2048 {
-		t.Errorf("expected msg2 (old, large) to be truncated, but got length %d", len(msgs[2].Content))
+	if len(msgs3[3].Content) > 2048 {
+		t.Errorf("expected msg2 (old, large) to be truncated, but got length %d", len(msgs3[3].Content))
 	}
-	if len(msgs[3].Content) != 1000 {
-		t.Errorf("expected msg3 (old, small) NOT to be truncated, but got length %d", len(msgs[3].Content))
+	if len(msgs3[5].Content) != 1000 {
+		t.Errorf("expected msg3 (old, small) NOT to be truncated, but got length %d", len(msgs3[5].Content))
 	}
-	if len(msgs[4].Content) != 2048 {
-		t.Errorf("expected msg4 (recent, large) NOT to be truncated, but got length %d", len(msgs[4].Content))
+	if len(msgs3[7].Content) != 2048 {
+		t.Errorf("expected msg4 (recent, large) NOT to be truncated, but got length %d", len(msgs3[7].Content))
 	}
-	if len(msgs[5].Content) > 2048 {
-		t.Errorf("expected msg5 (recent, large) NOT to be truncated, but got length %d", len(msgs[5].Content))
+	if len(msgs3[9].Content) > 2048 {
+		t.Errorf("expected msg5 (recent, large) NOT to be truncated, but got length %d", len(msgs3[9].Content))
 	}
-	if len(msgs[6].Content) > 2048 {
-		t.Errorf("expected msg6 (recent, large) NOT to be truncated, but got length %d", len(msgs[6].Content))
+	if len(msgs3[11].Content) > 2048 {
+		t.Errorf("expected msg6 (recent, large) NOT to be truncated, but got length %d", len(msgs3[11].Content))
 	}
 }
 
@@ -152,7 +120,7 @@ func TestExecShellExitCode(t *testing.T) {
 
 func TestToolGlob(t *testing.T) {
 	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, "sub", "node_modules"), 0o755)
+	os.MkdirAll(filepath.Join(dir, "sub", "node_modules"), 0755)
 	os.WriteFile(filepath.Join(dir, "a.sql"), []byte("x"), 0o644)
 	os.WriteFile(filepath.Join(dir, "sub", "b.sql"), []byte("x"), 0o644)
 	os.WriteFile(filepath.Join(dir, "sub", "c.go"), []byte("x"), 0o644)
@@ -169,5 +137,5 @@ func TestToolGlob(t *testing.T) {
 
 func TestSpawnDepthGuard(t *testing.T) {
 	spawnDepth = 1
-	defer func() { spawnD = 0 }
+	defer func() { spawnDepth = 0 }()
 }
