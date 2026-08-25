@@ -10,106 +10,69 @@ import (
 )
 
 func TestShrinkOldToolResultsBoundaries(t *testing.T) {
-	// test exactly at the threshold boundary (2048 bytes)
-	msg := Message{Role: "tool", ToolCallID: "r1", Content: strings.Repeat("a", 2048)}
-	msgs := []Message{
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r1", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}},
-		msg,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r2", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}}},
-		{Role: "tool", ToolCallID: "r2", Content: "ok"},
+	// Contract of shrinkOldToolResults (see session.go):
+	//   - keepRecent = 4: the 4 most recent tool results are ALWAYS kept intact.
+	//   - threshold  = 2048: among OLDER results (before that window), only
+	//     those longer than 2048 bytes are elided (head 1024 + marker + tail 256).
+	//   - older results <= 2048 are left untouched.
+	// So truncation only happens to a large tool result that is BOTH old
+	// (outside the last 4) AND over the threshold.
+
+	const threshold = 2048
+
+	// helper: build an interleaved assistant/tool message slice from contents.
+	build := func(contents []string) []Message {
+		var msgs []Message
+		for i, c := range contents {
+			id := fmt.Sprintf("r%d", i+1)
+			msgs = append(msgs,
+				Message{Role: "assistant", ToolCalls: []ToolCall{{ID: id, Type: "function"}}},
+				Message{Role: "tool", ToolCallID: id, Content: c},
+			)
+		}
+		return msgs
 	}
-	// The first msg's content is exactly 2048.
-	// Since the threshold logic uses `len(content) > threshold`, it should NOT be shrunk yet.
-	_ = shrinkOldToolResults(msgs)
-	if len(msgs[1].Content) != 2048 {
-		t.Errorf("expected length 2048, got %d", len(msgs[1].Content))
+	// contentAt returns the tool content for the nth tool result (0-indexed);
+	// tool messages sit at odd indices 1,3,5,...
+	contentAt := func(msgs []Message, n int) string { return msgs[2*n+1].Content }
+
+	// --- Case 1: fewer than keepRecent tool results => nothing is elided,
+	// even a large one, because it is still "recent". ---
+	msgs1 := build([]string{strings.Repeat("a", 3000), "ok"})
+	_ = shrinkOldToolResults(msgs1)
+	if got := len(contentAt(msgs1, 0)); got != 3000 {
+		t.Errorf("case1: only 2 tool results (both recent) — large one should be untouched, got %d", got)
 	}
 
-	// test just over the threshold boundary (2049 bytes)
-	msg = Message{Role: "tool", ToolCallID: "r3", Content: strings.Repeat("a", 2049)}
-	msgs = []Message{
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r3", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}}},
-		msg,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r4", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}}},
-		{Role: "tool", ToolCallID: "r4", Content: "ok"},
-	}
-	// The second msg's content is 2049. It should be shrunk if it's not the latest.
-	_ = shrinkOldToolResults(msgs)
-	if len(msgs[1].Content) >= 2048 {
-		t.Errorf("expected content to be truncated, but got length %d", len(msgs[1].Content))
-	}
+	// --- Case 2: 6 tool results. Last 4 are kept intact; the oldest 2 are
+	// elible. Sizes chosen to exercise every branch. ---
+	msgs2 := build([]string{
+		strings.Repeat("a", 3000), // #0 old, large   -> elided
+		strings.Repeat("a", 1000), // #1 old, small   -> untouched (<= threshold)
+		strings.Repeat("a", 3000), // #2 recent, large -> untouched (within last 4)
+		strings.Repeat("a", 2048), // #3 recent, at threshold -> untouched
+		strings.Repeat("a", 3000), // #4 recent, large -> untouched
+		strings.Repeat("a", 3000), // #5 recent, large -> untouched
+	})
+	_ = shrinkOldToolResults(msgs2)
 
-	// test complex scenario: multiple tool results with different ages and sizes
-	msg1 := Message{Role: "tool", ToolCallID: "r1", Content: strings.Repeat("a", 3000)} // Old, Large
-	msg2 := Message{Role: "tool", ToolCallID: "r2", Content: strings.Repeat("a", 3000)} // Old, Large
-	msg3 := Message{Role: "tool", ToolCallID: "r3", Content: strings.Repeat("a", 1000)} // Old, Small
-	msg4 := Message{Role: "tool", ToolCallID: "r4", Content: strings.Repeat("a", 2048)} // Recent, Large (at threshold)
-	msg5 := Message{Role: "tool", ToolCallID: "r5", Content: strings.Repeat("a", 3000)} // Recent, Large
-	msg6 := Message{Role: "tool", ToolCallID: "r6", Content: strings.Repeat("a", 3000)} // Recent, Large
-
-	msgs = []Message{
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r1", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}}},
-		msg1,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r2", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}}},
-		msg2,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r3", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}}},
-		msg3,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r4", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}}},
-		msg4,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r5", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}}},
-		msg5,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r6", Type: "function", Function: struct {
-			Name     string
-			Arguments string
-		}{Name: "t", Arguments: "{}"}}}},
-		msg6,
+	if got := len(contentAt(msgs2, 0)); got >= threshold {
+		t.Errorf("#0 (old, large) should be elided below %d, got %d", threshold, got)
 	}
-	_ = shrinkOldToolResults(msgs)
-
-	if len(msgs[1].Content) > 2048 {
-		t.Errorf("expected msg1 (old, large) to be truncated, but got length %d", len(msgs[1].Content))
+	if got := len(contentAt(msgs2, 1)); got != 1000 {
+		t.Errorf("#1 (old, small) should be untouched at 1000, got %d", got)
 	}
-	if len(msgs[2].Content) > 2048 {
-		t.Errorf("expected msg2 (old, large) to be truncated, but got length %d", len(msgs[2].Content))
+	if got := len(contentAt(msgs2, 2)); got != 3000 {
+		t.Errorf("#2 (recent, large) should be untouched at 3000, got %d", got)
 	}
-	if len(msgs[3].Content) != 1000 {
-		t.Errorf("expected msg3 (old, small) NOT to be truncated, but got length %d", len(msgs[3].Content))
+	if got := len(contentAt(msgs2, 3)); got != 2048 {
+		t.Errorf("#3 (recent, at threshold) should be untouched at 2048, got %d", got)
 	}
-	if len(msgs[4].Content) != 2048 {
-		t.Errorf("expected msg4 (recent, large) NOT to be truncated, but got length %d", len(msgs[4].Content))
+	if got := len(contentAt(msgs2, 4)); got != 3000 {
+		t.Errorf("#4 (recent, large) should be untouched at 3000, got %d", got)
 	}
-	if len(msgs[5].Content) > 2048 {
-		t.Errorf("expected msg5 (recent, large) NOT to be truncated, but got length %d", len(msgs[5].Content))
-	}
-	if len(msgs[6].Content) > 2048 {
-		t.Errorf("expected msg6 (recent, large) NOT to be truncated, but got length %d", len(msgs[6].Content))
+	if got := len(contentAt(msgs2, 5)); got != 3000 {
+		t.Errorf("#5 (recent, large) should be untouched at 3000, got %d", got)
 	}
 }
 
@@ -152,7 +115,7 @@ func TestExecShellExitCode(t *testing.T) {
 
 func TestToolGlob(t *testing.T) {
 	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, "sub", "node_modules"), 0o755)
+	os.MkdirAll(filepath.Join(dir, "sub", "node_modules"), 0755)
 	os.WriteFile(filepath.Join(dir, "a.sql"), []byte("x"), 0o644)
 	os.WriteFile(filepath.Join(dir, "sub", "b.sql"), []byte("x"), 0o644)
 	os.WriteFile(filepath.Join(dir, "sub", "c.go"), []byte("x"), 0o644)
@@ -168,6 +131,22 @@ func TestToolGlob(t *testing.T) {
 }
 
 func TestSpawnDepthGuard(t *testing.T) {
+	// toolSpawnTask must refuse to spawn a subtask when already inside one
+	// (spawnDepth >= 1): subtasks spawning subtasks is disallowed. See loop.go.
+	s := &Sandbox{Root: t.TempDir()}
+
+	// Simulate being one level deep already.
 	spawnDepth = 1
-	defer func() { spawnD = 0 }
+	defer func() { spawnDepth = 0 }()
+
+	out := toolSpawnTask(s, toolArgs{"task": "do something"})
+	if !strings.Contains(out, "cannot spawn further subtasks") {
+		t.Errorf("expected refusal when spawnDepth>=1, got: %q", out)
+	}
+
+	// And an empty task is rejected regardless of depth.
+	spawnDepth = 0
+	if out := toolSpawnTask(s, toolArgs{"task": "  "}); !strings.Contains(out, "task must describe") {
+		t.Errorf("expected empty-task rejection, got: %q", out)
+	}
 }
