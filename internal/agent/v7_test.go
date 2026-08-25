@@ -131,6 +131,22 @@ func TestToolGlob(t *testing.T) {
 }
 
 func TestSpawnDepthGuard(t *testing.T) {
+	// toolSpawnTask must refuse to spawn a subtask when already inside one
+	// (spawnDepth >= 1): subtasks spawning subtasks is disallowed. See loop.go.
+	s := &Sandbox{Root: t.TempDir()}
+
+	// Simulate being one level deep already.
 	spawnDepth = 1
 	defer func() { spawnDepth = 0 }()
+
+	out := toolSpawnTask(s, toolArgs{"task": "do something"})
+	if !strings.Contains(out, "cannot spawn further subtasks") {
+		t.Errorf("expected refusal when spawnDepth>=1, got: %q", out)
+	}
+
+	// And an empty task is rejected regardless of depth.
+	spawnDepth = 0
+	if out := toolSpawnTask(s, toolArgs{"task": "  "}); !strings.Contains(out, "task must describe") {
+		t.Errorf("expected empty-task rejection, got: %q", out)
+	}
 }
