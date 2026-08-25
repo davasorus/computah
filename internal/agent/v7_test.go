@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,75 +10,69 @@ import (
 )
 
 func TestShrinkOldToolResultsBoundaries(t *testing.T) {
-	// test exactly at the threshold boundary (2048 bytes)
-	msg1 := Message{Role: "tool", ToolCallID: "r1", Content: strings.Repeat("a", 2048)}
-	msgs1 := []Message{
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r1", Type: "function"}}},
-		msg1,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r2", Type: "function"}}},
-		{Role: "tool", ToolCallID: "r2", Content: "ok"},
-	}
+	// Contract of shrinkOldToolResults (see session.go):
+	//   - keepRecent = 4: the 4 most recent tool results are ALWAYS kept intact.
+	//   - threshold  = 2048: among OLDER results (before that window), only
+	//     those longer than 2048 bytes are elided (head 1024 + marker + tail 256).
+	//   - older results <= 2048 are left untouched.
+	// So truncation only happens to a large tool result that is BOTH old
+	// (outside the last 4) AND over the threshold.
 
+	const threshold = 2048
+
+	// helper: build an interleaved assistant/tool message slice from contents.
+	build := func(contents []string) []Message {
+		var msgs []Message
+		for i, c := range contents {
+			id := fmt.Sprintf("r%d", i+1)
+			msgs = append(msgs,
+				Message{Role: "assistant", ToolCalls: []ToolCall{{ID: id, Type: "function"}}},
+				Message{Role: "tool", ToolCallID: id, Content: c},
+			)
+		}
+		return msgs
+	}
+	// contentAt returns the tool content for the nth tool result (0-indexed);
+	// tool messages sit at odd indices 1,3,5,...
+	contentAt := func(msgs []Message, n int) string { return msgs[2*n+1].Content }
+
+	// --- Case 1: fewer than keepRecent tool results => nothing is elided,
+	// even a large one, because it is still "recent". ---
+	msgs1 := build([]string{strings.Repeat("a", 3000), "ok"})
 	_ = shrinkOldToolResults(msgs1)
-	if len(msgs1[1].Content) != 2048 {
-		t.Errorf("expected length 2048, got %d", len(msgs1[1].Content))
+	if got := len(contentAt(msgs1, 0)); got != 3000 {
+		t.Errorf("case1: only 2 tool results (both recent) — large one should be untouched, got %d", got)
 	}
 
-	// test just over the threshold boundary (2049 bytes)
-	msg2 := Message{Role: "tool", ToolCallID: "r3", Content: strings.Repeat("a", 2049)}
-	msgs2 := []Message{
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r3", Type: "function"}}},
-		msg2,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r4", Type: "function"}}},
-		{Role: "tool", ToolCallID: "r4", Content: "ok"},
-	}
+	// --- Case 2: 6 tool results. Last 4 are kept intact; the oldest 2 are
+	// elible. Sizes chosen to exercise every branch. ---
+	msgs2 := build([]string{
+		strings.Repeat("a", 3000), // #0 old, large   -> elided
+		strings.Repeat("a", 1000), // #1 old, small   -> untouched (<= threshold)
+		strings.Repeat("a", 3000), // #2 recent, large -> untouched (within last 4)
+		strings.Repeat("a", 2048), // #3 recent, at threshold -> untouched
+		strings.Repeat("a", 3000), // #4 recent, large -> untouched
+		strings.Repeat("a", 3000), // #5 recent, large -> untouched
+	})
 	_ = shrinkOldToolResults(msgs2)
-	if len(msgs2[1].Content) >= 2048 {
-		t.Errorf("expected content to be truncated, but got length %d", len(msgs2[1].Content))
-	}
 
-	// test complex scenario: multiple tool results with different ages and sizes
-	m1 := Message{Role: "tool", ToolCallID: "r1", Content: strings.Repeat("a", 3000)} // Old, Large
-	m2 := Message{Role: "tool", ToolCallID: "r2", Content: strings.Repeat("a", 3000)} // Old, Large
-	m3 := Message{Role: "tool", ToolCallID: "r3", Content: strings.Repeat("a", 1000)} // Old, Small
-	m4 := Message{Role: "tool", ToolCallID: "r4", Content: strings.Repeat("a", 2048)} // Recent, Large (at threshold)
-	m5 := Message{Role: "tool", ToolCallID: "r5", Content: strings.Repeat("a", 3000)} // Recent, Large
-	m6 := Message{Role: "tool", ToolCallID: "r6", Content: strings.Repeat("a", 3000)} // Recent, Large
-
-	msgs3 := []Message{
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r1", Type: "function"}}},
-		m1,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r2", Type: "function"}}},
-		m2,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r3", Type: "function"}}},
-		m3,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r4", Type: "function"}}},
-		m4,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r5", Type: "function"}}},
-		m5,
-		{Role: "assistant", ToolCalls: []ToolCall{{ID: "r6", Type: "function"}}},
-		m6,
+	if got := len(contentAt(msgs2, 0)); got >= threshold {
+		t.Errorf("#0 (old, large) should be elided below %d, got %d", threshold, got)
 	}
-
-	_ = shrinkOldToolResults(msgs3)
-
-	if len(msgs3[1].Content) > 2048 {
-		t.Errorf("expected msg1 (old, large) to be truncated, but got length %d", len(msgs3[1].Content))
+	if got := len(contentAt(msgs2, 1)); got != 1000 {
+		t.Errorf("#1 (old, small) should be untouched at 1000, got %d", got)
 	}
-	if len(msgs3[3].Content) > 2048 {
-		t.Errorf("expected msg2 (old, large) to be truncated, but got length %d", len(msgs3[3].Content))
+	if got := len(contentAt(msgs2, 2)); got != 3000 {
+		t.Errorf("#2 (recent, large) should be untouched at 3000, got %d", got)
 	}
-	if len(msgs3[5].Content) != 1000 {
-		t.Errorf("expected msg3 (old, small) NOT to be truncated, but got length %d", len(msgs3[5].Content))
+	if got := len(contentAt(msgs2, 3)); got != 2048 {
+		t.Errorf("#3 (recent, at threshold) should be untouched at 2048, got %d", got)
 	}
-	if len(msgs3[7].Content) != 2048 {
-		t.Errorf("expected msg4 (recent, large) NOT to be truncated, but got length %d", len(msgs3[7].Content))
+	if got := len(contentAt(msgs2, 4)); got != 3000 {
+		t.Errorf("#4 (recent, large) should be untouched at 3000, got %d", got)
 	}
-	if len(msgs3[9].Content) > 2048 {
-		t.Errorf("expected msg5 (recent, large) NOT to be truncated, but got length %d", len(msgs3[9].Content))
-	}
-	if len(msgs3[11].Content) > 2048 {
-		t.Errorf("expected msg6 (recent, large) NOT to be truncated, but got length %d", len(msgs3[11].Content))
+	if got := len(contentAt(msgs2, 5)); got != 3000 {
+		t.Errorf("#5 (recent, large) should be untouched at 3000, got %d", got)
 	}
 }
 
