@@ -25,6 +25,7 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/davasorus/computah/internal/core"
 	"os"
 	"path/filepath"
 	"strings"
@@ -119,7 +120,7 @@ func runEval(root, path string, runs int) int {
 	assumeYes = true
 	statsTrace = true // per-request timing lines: the KV-cache diagnostic
 
-	fmt.Printf("eval: %d case(s) × %d run(s) — model=%s workdir=%s\n\n", len(cases), runs, curModel, root)
+	core.EmitLineC(cDim, fmt.Sprintf("eval: %d case(s) × %d run(s) — model=%s workDirc=%s\n", len(cases), runs, curModel, root))
 	type result struct {
 		name   string
 		passes int

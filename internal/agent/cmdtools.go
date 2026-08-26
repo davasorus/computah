@@ -111,7 +111,7 @@ func loadCommandTools(root string) {
 	if len(names) > 0 {
 		buildToolSchemas()
 		sort.Strings(names)
-		fmt.Println("command tools:", strings.Join(names, " "))
+		core.EmitLineC(cDim, "command tools: "+strings.Join(names, " "))
 	}
 }
 
@@ -175,13 +175,13 @@ func runCommandTool(s *Sandbox, m cmdToolManifest, root string, timeout time.Dur
 	// Non-read-only command tools need approval, same gate as run_command.
 	display := strings.Join(argv, " ")
 	if !m.ReadOnly {
-		fmt.Println(tint(cCyan, "  ⚙ "+core.LogSafe(m.Name)+": "+core.LogSafe(display)))
+		core.EmitLineC(cDim, "  ⚙ "+core.LogSafe(m.Name)+": "+core.LogSafe(display))
 		notifyApproval("run command tool: " + m.Name)
 		if approvals.request("    run this command tool? [y/N] ", m.Name) == approveDeny {
 			return "User declined to run the command tool " + m.Name + "."
 		}
 	} else {
-		fmt.Println(tint(cDim, "  ⚙ "+core.LogSafe(m.Name)+" (read-only)"))
+		core.EmitLineC(cDim, "  ⚙ "+core.LogSafe(m.Name)+" (read-only)")
 	}
 
 	// Provide args as JSON on stdin as well, for scripts that prefer it.

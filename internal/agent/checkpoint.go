@@ -17,6 +17,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"github.com/davasorus/computah/internal/core"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -73,10 +74,10 @@ func takeCheckpoint(root, prompt string) {
 // handleRewind implements /rewind: pick a checkpoint, confirm, restore.
 func handleRewind(root string) {
 	if len(checkpoints) == 0 {
-		fmt.Println("no checkpoints this session" + map[bool]string{true: " (disabled by config)", false: ""}[checkpointsOff])
+		core.EmitLineC(cDim, "no-checkpoints")
 		return
 	}
-	fmt.Println("checkpoints (tree state BEFORE each turn):")
+	core.EmitLineC(cDim, "checkpoints (tree state BEFORE each turn):")
 	start := 0
 	if len(checkpoints) > 20 {
 		start = len(checkpoints) - 20
@@ -105,21 +106,21 @@ func handleRewind(root string) {
 	}
 	if c.hash == "" {
 		if out, err := gitRun(root, "checkout", "HEAD", "--", "."); err != nil {
-			fmt.Println("rewind failed:", out)
+			core.EmitError(fmt.Sprintf("rewind failed: %s", out))
 			return
 		}
 	} else {
 		if out, err := gitRun(root, "checkout", c.hash, "--", "."); err != nil {
-			fmt.Println("rewind failed:", out)
+			core.EmitError(fmt.Sprintf("rewind failed: %s", out))
 			return
 		}
 		// checkout <hash> -- . also stages the restored content; unstage so
 		// the tree looks like a normal edited state, not a half-commit.
 		_, _ = gitRun(root, "reset", "-q")
 	}
-	fmt.Printf("rewound tracked files to the state before turn %d\n", c.turn)
-	fmt.Println("(files CREATED after that checkpoint still exist — they were untracked; check git status)")
-	fmt.Println("note: the conversation still describes the newer state — consider telling the model what you rewound, or /compact")
+	core.EmitLine("rewound tracked files to the state before turn " + strconv.Itoa(c.turn) + "\n")
+	core.EmitLineC(cDim, "(files CREATED after that checkpoint still exist — they were untracked; check git status)")
+	core.EmitLineC(cDim, "note: the conversation still describes the newer state — consider telling the model what you rewound, or /compact")
 }
 
 // handleCommit implements /commit: the model writes the Conventional
