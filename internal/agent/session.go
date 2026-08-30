@@ -23,7 +23,9 @@ import (
 // -resume loads the tail of the latest session for this directory;
 // /compact distills the session into a summary and starts a fresh file.
 
-const resumeTail = 30 // messages restored by -resume (full transcript stays on disk)
+// resumeTail is how many messages -resume restores (full transcript stays
+// on disk); config "resume_tail".
+var resumeTail = 30
 
 // autoCompactTokens is the soft context budget. When the running estimate
 // crosses it, the session auto-compacts before the next turn. Set well below
@@ -358,7 +360,7 @@ func (st *SessionStore) generateTitle(messages []Message) {
 		userMsgs = userMsgs[:8]
 	}
 	req := []Message{
-		{Role: "system", Content: "Summarize what this coding session was about in ONE line, at most 8 words, no punctuation at the end, no quotes. Respond with the title only."},
+		{Role: "system", Content: promptTitleSystem()},
 		{Role: "user", Content: strings.Join(userMsgs, "\n---\n")},
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -558,9 +560,8 @@ func Compact(baseURL, model string, messages []Message, st *SessionStore) []Mess
 		return messages
 	}
 	messages = append(messages, Message{
-		Role: "user",
-		Content: "Summarize this session for future context: key decisions, files changed and why, " +
-			"and any unresolved threads. Be concise (under 300 words). Output only the summary.",
+		Role:    "user",
+		Content: promptCompactRequest(),
 	})
 	reply, intr, err := streamChat(baseURL, model, messages)
 	if intr {
@@ -573,7 +574,7 @@ func Compact(baseURL, model string, messages []Message, st *SessionStore) []Mess
 	}
 	fresh := []Message{
 		messages[0], // the system prompt
-		{Role: "user", Content: "Context carried over from a previous session (compacted summary):\n" + reply.Content},
+		{Role: "user", Content: promptCompactCarryOver(reply.Content)},
 		{Role: "assistant", Content: "Understood — continuing from that context."},
 	}
 	st.Rotate()

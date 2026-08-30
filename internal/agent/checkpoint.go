@@ -142,10 +142,7 @@ func handleCommit(root string) {
 	}
 	core.EmitStatus(tint(cDim, "  (generating commit message from the diff)"))
 	msgs := []Message{
-		{Role: "system", Content: "You write git commit messages following the Conventional Commits standard: " +
-			"type(scope): description — types: feat, fix, docs, style, refactor, perf, test, build, ci, chore. " +
-			"Imperative mood, subject ≤72 chars, blank line, then a body for non-trivial changes. " +
-			"Breaking changes get ! after the type/scope. Respond with the commit message ONLY — no fences, no commentary."},
+		{Role: "system", Content: promptCommitSystem()},
 		{Role: "user", Content: "Changed files:\n" + status + "\n\nDiff:\n" + diff},
 	}
 	// Direct call, no tools: plan mode's currentTools doesn't apply here
