@@ -139,7 +139,7 @@ func loadAgentRoles(root string) {
 			names = append(names, n)
 		}
 		sort.Strings(names)
-		fmt.Println("agent roles:", strings.Join(names, " "), "— usable via spawn_task or /agents")
+		emitLine("agent roles: " + strings.Join(names, " ") + " — usable via spawn_task or /agents")
 	}
 }
 
@@ -166,7 +166,7 @@ func parseAgentRole(name, body string) agentRole {
 
 func listAgentRoles() {
 	if len(agentRoles) == 0 {
-		fmt.Println("no agent roles defined — add .agent/agents/<name>.md (see file header of roles.go)")
+		emitLine("no agent roles defined — add .agent/agents/<name>.md (see file header of roles.go)")
 		return
 	}
 	var names []string
@@ -180,7 +180,7 @@ func listAgentRoles() {
 		if model == "" {
 			model = "(main model)"
 		}
-		fmt.Printf("  %-14s %-30s %s\n", n, model, firstSentence(r.Prompt))
+		emitLine(fmt.Sprintf("  %-14s %-30s %s", n, model, firstSentence(r.Prompt)))
 	}
-	fmt.Println(`the model delegates with spawn_task {"role": "<name>", "task": "..."}`)
+	emitLine(`the model delegates with spawn_task {"role": "<name>", "task": "..."}`)
 }

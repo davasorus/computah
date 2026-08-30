@@ -137,12 +137,12 @@ func startMCPServers(cfgs map[string]MCPServerConfig) func() {
 	for name, cfg := range cfgs {
 		srv, toolCount, err := startMCPServer(name, cfg)
 		if err != nil {
-			fmt.Printf("mcp: %s: %v (continuing without it)\n", name, err)
+			emitLine(fmt.Sprintf("mcp: %s: %v (continuing without it)", name, err))
 			continue
 		}
 		servers = append(servers, srv)
 		connected[name] = true
-		fmt.Printf("mcp: %s connected — %d tool(s) registered\n", name, toolCount)
+		emitLine(fmt.Sprintf("mcp: %s connected — %d tool(s) registered", name, toolCount))
 	}
 	if len(servers) > 0 {
 		buildToolSchemas()

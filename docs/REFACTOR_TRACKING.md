@@ -20,15 +20,20 @@ All items above build and pass `go test ./...` / `go vet ./...`.
 - **`internal/agent/term.go`**: raw ANSI cursor/erase codes (`\r\033[K`), the input prompt (`fmt.Print("> ")`), and the spinner line. These manipulate the terminal cursor in place; forcing them through the Event Bus (which is meant for discrete, one-shot lines a subscriber can render independently) would require Bus support for in-place/overwrite semantics first.
 - **`internal/agent/notify.go`**: `fmt.Print("\a")` (terminal bell) — arguably fine to leave as-is; not really an "event" a TUI/Web subscriber renders.
 - [x] **`internal/agent/tools.go`** (Phase 1b, done): tool-approval prompts, rejection/blocked messages, run_command trace lines, todo rendering, and `Sandbox.Summary()` migrated to `emitLine`/`emitLineC` (the agent-package aliases for `core.EmitLine`/`core.EmitLineC`). The two `fmt.Print("\033[2m"/"\033[0m")` calls in `ExecShell` are left as-is — they wrap *live-streamed* shell output in a dim ANSI code, which is in-place terminal control, not a discrete line the Bus model represents. Verified with `go build ./...` and `go test ./...`.
-- **`internal/agent/session.go`**: `/sessions`, `/tree`, and `/compact` output.
-- **`internal/agent/roles.go`**: `/agents` listing output.
-- **`internal/agent/mcp.go`**: MCP server connect/fail status lines (startup-time, before the REPL loop is fully wired).
-- **`internal/agent/stats.go`**: `statsRecorder.print()` — thin wrapper already delegating to `render()`; low priority.
-- **`internal/agent/loop.go`**: a handful of bare `fmt.Println()` calls that just terminate a streamed line (paired with token-by-token `EmitToken` output) plus one status line.
+- [x] **`internal/agent/session.go`** (Phase 1b, done): mid-turn context-pressure notices, `/sessions`, `/tree`, and `/compact` output migrated to `emitLine`/`emitLineC`.
+- [x] **`internal/agent/roles.go`** (Phase 1b, done): `/agents` listing and the startup roles-loaded line migrated to `emitLine`.
+- [x] **`internal/agent/mcp.go`** (Phase 1b, done): MCP server connect/fail status lines migrated to `emitLine`.
+- [x] **`internal/agent/stats.go`** (Phase 1b, done): `statsRecorder.print()` now calls `emitLine` (trims the trailing newline `render()` had appended for the old `fmt.Print`).
+- [x] **`internal/agent/loop.go`** (Phase 1b, done): the `/plan`-declined status line migrated to `emitLine`. The bare `fmt.Println()` calls at lines 179/220/260/345 are intentionally left as-is — they terminate a line whose content was already streamed token-by-token directly to stdout by `md.MDWriter` (outside the Bus, by design; see `events_stdout.go`'s note on `EvToken`/`EvAssistant`), so migrating just the trailing newline would split one logical line across two rendering paths.
 
-Recommendation: treat these as **Phase 1b**, scoped and executed file-by-file (tools.go first, given it's the safety-critical approval path), rather than bundled into "Phase 1" as originally scoped.
+All of the above build cleanly (`go build ./...`) and pass `go test ./...`.
 
-`tools.go` is now done (see above). Remaining Phase 1b files, in suggested order: `session.go`, `roles.go`, `mcp.go`, `stats.go`, `loop.go` (the handful of leftover lines), then `term.go`/`notify.go` last (need Bus support for in-place rendering first, or may stay as-is by design).
+## Remaining (deferred by design)
+
+- **`internal/agent/term.go`**: raw ANSI cursor/erase codes (`\r\033[K`), the input prompt (`fmt.Print("> ")`), and the spinner line. These manipulate the terminal cursor in place; forcing them through the Event Bus (which is meant for discrete, one-shot lines a subscriber can render independently) would require Bus support for in-place/overwrite semantics first.
+- **`internal/agent/notify.go`**: `fmt.Print("\a")` (terminal bell) — arguably fine to leave as-is; not really an "event" a TUI/Web subscriber renders.
+
+Phase 1b is otherwise complete: every `internal/agent` file with discrete, one-shot status/error output now goes through the Event Bus. What remains (`term.go`, `notify.go`, the two dim-wrap codes in `tools.go`'s `ExecShell`, and the streamed-line newlines in `loop.go`) is in-place terminal control or a direct extension of already-streamed content, not "communication" in the Bus sense — these need Bus support for in-place/overwrite rendering before they can move, or may stay as raw terminal control by design.
 
 ## Notes
 

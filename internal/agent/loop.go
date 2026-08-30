@@ -496,7 +496,7 @@ func runPlanTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages 
 		}
 		return runPlanTurn(baseURL, model, sb, st, messages, "Revise the previous plan: "+note)
 	default:
-		fmt.Println("(plan kept in context, nothing executed — refine it or /plan again)")
+		emitLine("(plan kept in context, nothing executed — refine it or /plan again)")
 		return messages
 	}
 }
