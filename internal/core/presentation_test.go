@@ -10,6 +10,7 @@ func TestEveryEventKindHasAStyle(t *testing.T) {
 	allKinds := []EventKind{
 		EvLine, EvToken, EvThinking, EvToolCall, EvToolDone,
 		EvUser, EvAssistant, EvStats, EvStatus, EvError, EvBusy, EvApproval,
+		EvOverwrite,
 	}
 	for _, k := range allKinds {
 		if _, ok := eventStyles[k]; !ok {

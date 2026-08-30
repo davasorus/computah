@@ -173,3 +173,39 @@ func TestConvenienceEmitters(t *testing.T) {
 		t.Error("EmitToolCallInline should set meta inline=1")
 	}
 }
+
+// TestEmitOverwriteAndClear verifies the in-place-line emitters encode Kind,
+// Key, Text/Color, and the clear flag correctly — subscribers key their
+// replace/erase logic off exactly these fields.
+func TestEmitOverwriteAndClear(t *testing.T) {
+	c := &collector{}
+	unsub := Bus.Subscribe(c)
+	defer unsub()
+
+	EmitOverwrite("spinner", "thinking…", ColorCyan)
+	EmitOverwrite("spinner", "thinking harder…", ColorCyan)
+	EmitClear("spinner")
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.events) != 3 {
+		t.Fatalf("expected 3 events, got %d", len(c.events))
+	}
+	for i, e := range c.events {
+		if e.Kind != EvOverwrite {
+			t.Fatalf("event %d: expected EvOverwrite, got %v", i, e.Kind)
+		}
+		if e.Key != "spinner" {
+			t.Fatalf("event %d: expected Key=spinner, got %q", i, e.Key)
+		}
+	}
+	if c.events[0].Text != "thinking…" || c.events[0].Color != ColorCyan {
+		t.Errorf("first overwrite wrong: %+v", c.events[0])
+	}
+	if c.events[1].Text != "thinking harder…" {
+		t.Errorf("second overwrite should carry updated text: %+v", c.events[1])
+	}
+	if c.events[2].Meta["clear"] != "1" {
+		t.Errorf("EmitClear must set meta clear=1: %+v", c.events[2])
+	}
+}

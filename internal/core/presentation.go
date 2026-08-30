@@ -49,6 +49,7 @@ var eventStyles = map[EventKind]EventStyle{
 	EvError:     {Glyph: "✗", Role: RoleError, Indent: 0},
 	EvBusy:      {Glyph: "", Role: RoleDim, Indent: 0},
 	EvApproval:  {Glyph: "?", Role: RoleAccent, Indent: 2},
+	EvOverwrite: {Glyph: "", Role: RoleDim, Indent: 0},
 }
 
 // Pad returns the leading indentation as spaces.

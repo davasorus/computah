@@ -152,6 +152,7 @@ func dashEventsHandler(w http.ResponseWriter, r *http.Request) {
 				"text": e.Text,
 				"tool": e.Tool,
 				"meta": e.Meta,
+				"key":  e.Key,
 				"time": e.Time.Format("15:04:05"),
 			})
 			_, _ = fmt.Fprintf(w, "event: %s\ndata: %s\n\n", e.Kind, data)

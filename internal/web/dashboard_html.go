@@ -79,6 +79,7 @@ const dashHTML = `<!doctype html>
   .ev.error .b { color: var(--red); }       /* RoleError */
   .ev.status .b { color: var(--violet); }   /* RoleStatus (its own accent) */
   .ev.stats .b { color: var(--dim); }       /* RoleDim */
+  .ev.overwrite .b { color: var(--dim); }   /* RoleDim: in-place line, e.g. spinner */
   .ev.assistant .b, .ev.token .b { color: var(--ink); }  /* RoleAssistant */
   .ev.user .b { color: var(--green); }       /* RoleUser */
 
@@ -181,8 +182,30 @@ const dashHTML = `<!doctype html>
   });
 
   var glyphs = { tool_call: '⚙', tool_done: '↳', error: '✗', status: '•', stats: '∑', user: '❯', assistant: '', token: '' };
+  var owRows = {}; // key -> the <div class="ev overwrite"> currently showing that key's in-place line
 
   function add(ev) {
+    // In-place lines (spinner/progress): update or remove the ONE row for
+    // this key instead of appending a new one each time.
+    if (ev.kind === 'overwrite') {
+      var row = owRows[ev.key];
+      if (ev.meta && ev.meta.clear === '1') {
+        if (row) { row.remove(); delete owRows[ev.key]; }
+        return;
+      }
+      if (!row) {
+        row = document.createElement('div');
+        row.className = 'ev overwrite';
+        row.innerHTML = '<span class="t"></span><span class="b"></span>';
+        feed.appendChild(row);
+        owRows[ev.key] = row;
+      }
+      row.querySelector('.t').textContent = ev.time || '';
+      row.querySelector('.b').textContent = ev.text || '';
+      while (feed.childNodes.length > 2000) feed.removeChild(feed.firstChild);
+      if (atBottom) feed.scrollTop = feed.scrollHeight;
+      return;
+    }
     // Busy lifecycle drives the working indicator.
     if (ev.kind === 'busy') {
       var on = ev.text === '1';
@@ -413,7 +436,7 @@ const dashHTML = `<!doctype html>
   }
 
   var es = new EventSource('/events');
-  var kinds = ['line','token','thinking','tool_call','tool_done','user','assistant','stats','status','error','busy','approval'];
+  var kinds = ['line','token','thinking','tool_call','tool_done','user','assistant','stats','status','error','busy','approval','overwrite'];
   kinds.forEach(function (k) {
     es.addEventListener(k, function (m) {
       try { add(JSON.parse(m.data)); } catch (e) {}

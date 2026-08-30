@@ -37,6 +37,19 @@ const (
 	EvError     EventKind = "error"     // an error line
 	EvBusy      EventKind = "busy"      // turn lifecycle: Text is "1" (working) or "0" (idle)
 	EvApproval  EventKind = "approval"  // a tool/command awaits user approval (web mode)
+
+	// EvOverwrite is an in-place update to a line identified by Event.Key,
+	// rather than a new discrete line — the spinner, a progress counter, or
+	// any other "this line keeps changing" status. A subscriber that
+	// understands Key re-renders that ONE line in place (terminal: erase +
+	// reprint the current line; TUI/dashboard: update the existing widget
+	// instead of appending a new one). Meta["clear"]=="1" means "remove the
+	// line for this Key entirely" (e.g. the spinner finished). A subscriber
+	// that doesn't implement in-place rendering may safely treat this like
+	// EvLine and append it — degraded (a scrolling trail instead of one
+	// updating line) but never broken, and a clear with no matching prior
+	// line is simply a no-op.
+	EvOverwrite EventKind = "overwrite"
 )
 
 // Event is one thing that happened, timestamped. Fields beyond Kind/Text are
@@ -50,6 +63,9 @@ type Event struct {
 	Meta  map[string]string // arbitrary extras (stats fields, args preview)
 	Color string            // suggested color hint for the line (maps to term colors)
 	Time  time.Time
+	// Key identifies the in-place line an EvOverwrite event updates or
+	// clears (see EvOverwrite). Unused by other kinds.
+	Key string
 }
 
 // Subscriber receives every event. Implementations must be non-blocking or
@@ -140,6 +156,22 @@ func EmitToolDone(tool, summary string) {
 }
 func EmitStats(text string, meta map[string]string) {
 	Bus.Emit(Event{Kind: EvStats, Text: text, Meta: meta})
+}
+
+// EmitOverwrite emits (or updates) an in-place line identified by key —
+// repeated calls with the same key replace that line rather than adding a
+// new one. Use for spinners, progress counters, and other status text that
+// changes rapidly and shouldn't scroll the transcript. color is an optional
+// tint hint (see Event.Color), empty for none.
+func EmitOverwrite(key, text, color string) {
+	Bus.Emit(Event{Kind: EvOverwrite, Key: key, Text: text, Color: color})
+}
+
+// EmitClear removes the in-place line for key (e.g. a finished spinner) —
+// subscribers that rendered it erase the line entirely rather than leaving
+// stale text behind.
+func EmitClear(key string) {
+	Bus.Emit(Event{Kind: EvOverwrite, Key: key, Meta: map[string]string{"clear": "1"}})
 }
 
 // NewBus returns a fresh, empty event bus. Tests use it to exercise

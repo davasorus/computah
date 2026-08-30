@@ -299,7 +299,62 @@ func (m *tuiModel) applyEvent(e core.Event) {
 		// high-frequency thinking-token updates)
 	case core.EvStats:
 		// rail-only; nothing in the transcript changed
+	case core.EvOverwrite:
+		m.applyOverwrite(e)
 	}
+}
+
+// overwriteMarker/cutOverwritePrefix implement in-place lines (EvOverwrite)
+// in the transcript slice: a line tagged "\x00ow<key>\x00<rendered>" is
+// found by key and REPLACED on the next update with the same key, instead of
+// a new line being appended — the TUI equivalent of the terminal erasing and
+// reprinting a spinner line in place.
+func overwriteMarker(key string) string { return "\x00ow" + key + "\x00" }
+
+func cutOverwritePrefix(l string) (string, bool) {
+	if !strings.HasPrefix(l, "\x00ow") {
+		return "", false
+	}
+	rest := l[len("\x00ow"):]
+	i := strings.IndexByte(rest, 0)
+	if i < 0 {
+		return "", false
+	}
+	return rest[i+1:], true
+}
+
+// applyOverwrite finds the transcript line for e.Key (if any) and replaces
+// it, or removes it on a clear. A key with no prior line and Meta["clear"]
+// is simply a no-op.
+func (m *tuiModel) applyOverwrite(e core.Event) {
+	marker := overwriteMarker(e.Key)
+	idx := -1
+	for i, l := range m.lines {
+		if strings.HasPrefix(l, marker) {
+			idx = i
+			break
+		}
+	}
+	if e.Meta != nil && e.Meta["clear"] == "1" {
+		if idx >= 0 {
+			m.lines = append(m.lines[:idx], m.lines[idx+1:]...)
+			m.reflow()
+		}
+		return
+	}
+	rendered := e.Text
+	if e.Color != "" {
+		rendered = tuiColor(e.Color, rendered)
+	} else {
+		rendered = stDim.Render(rendered)
+	}
+	line := marker + rendered
+	if idx >= 0 {
+		m.lines[idx] = line
+	} else {
+		m.lines = append(m.lines, line)
+	}
+	m.reflow()
 }
 
 // tuiColor styles a line with the same color hint the terminal uses, mapped
@@ -353,6 +408,11 @@ func (m *tuiModel) reflow() {
 			b.WriteString(body)
 			b.WriteByte('\n')
 			continue
+		} else if body, ok := cutOverwritePrefix(l); ok {
+			// In-place line (spinner/progress) — render like any other line;
+			// applyOverwrite already replaced it in m.lines rather than
+			// appending, so it never scrolls as a duplicate.
+			block = body
 		} else {
 			block = l
 		}

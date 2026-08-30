@@ -48,16 +48,7 @@ See `docs/REFACTOR_TRACKING.md` for the detailed file-by-file record.
 
 ### Not yet migrated (Phase 1b — separate, scoped effort)
 
-Achieving literal "zero `fmt.Printf`/`fmt.Println` in `internal/agent`" also requires touching `tools.go` (tool-approval prompts — safety-critical, needs its own careful pass), `session.go`, `roles.go`, `mcp.go`, `stats.go`, `term.go` (raw ANSI cursor control — needed Bus support for in-place updates before it could move), `notify.go`, and a few lines in `loop.go`. These were deliberately left out of this pass; see `docs/REFACTOR_TRACKING.md` for the reasoning per file. `tools.go`, `session.go`, `roles.go`, `mcp.go`, `stats.go`, and the `loop.go` line have since been migrated (see `docs/REFACTOR_TRACKING.md`, Phase 1b).
-
-### Unblocking feature: in-place/overwrite Bus semantics (done)
-
-`term.go`'s spinner was the one remaining case Phase 1b couldn't migrate: the Bus only modeled discrete, one-shot lines, with no way for a subscriber to know "replace the previous line" versus "append a new one." That gap is now closed as its own feature, not a migration pass:
-
-- `internal/core/events.go` gained `EvOverwrite`, an `Event.Key` field, and `EmitOverwrite(key, text, color)` / `EmitClear(key)` emitters.
-- All three subscribers (stdout, TUI, web dashboard) implement in-place replace/clear keyed on `Key`, so a spinner-style status line updates one line/row instead of scrolling a new one on every tick.
-
-See `docs/REFACTOR_TRACKING.md`'s "Feature: in-place/overwrite Bus semantics" section for the full file list and test coverage. `term.go` itself is now unblocked but has not yet been migrated onto these new emitters — that migration is the next follow-up task.
+Achieving literal "zero `fmt.Printf`/`fmt.Println` in `internal/agent`" also requires touching `tools.go` (tool-approval prompts — safety-critical, needs its own careful pass), `session.go`, `roles.go`, `mcp.go`, `stats.go`, `term.go` (raw ANSI cursor control — needs Bus support for in-place updates before it can move), `notify.go`, and a few lines in `loop.go`. These were deliberately left out of this pass; see `docs/REFACTOR_TRACKING.md` for the reasoning per file.
 
 ## Success Criteria
 

@@ -38,6 +38,52 @@ func TestTUIApplyEventBuildsTranscript(t *testing.T) {
 	}
 }
 
+// TestTUIOverwriteReplacesInPlace verifies EvOverwrite updates the SAME
+// transcript line on repeat keys (no scrolling duplicates) and Meta["clear"]
+// removes it entirely.
+func TestTUIOverwriteReplacesInPlace(t *testing.T) {
+	m := newTUIModel(func(string) {})
+	m.applyEvent(core.Event{Kind: core.EvLine, Text: "before"})
+	m.applyEvent(core.Event{Kind: core.EvOverwrite, Key: "spinner", Text: "thinking…"})
+	m.applyEvent(core.Event{Kind: core.EvOverwrite, Key: "spinner", Text: "thinking harder…"})
+
+	owCount := 0
+	var lastBody string
+	for _, l := range m.lines {
+		if body, ok := cutOverwritePrefix(l); ok {
+			owCount++
+			lastBody = body
+		}
+	}
+	if owCount != 1 {
+		t.Fatalf("repeated overwrite with the same key should replace, not append; got %d overwrite lines", owCount)
+	}
+	if !strings.Contains(lastBody, "thinking harder") {
+		t.Fatalf("overwrite line should hold the latest text, got %q", lastBody)
+	}
+	if len(m.lines) != 2 { // "before" + the one overwrite line
+		t.Fatalf("expected 2 transcript lines (before + overwrite), got %d: %v", len(m.lines), m.lines)
+	}
+
+	// Clear removes the line entirely.
+	m.applyEvent(core.Event{Kind: core.EvOverwrite, Key: "spinner", Meta: map[string]string{"clear": "1"}})
+	for _, l := range m.lines {
+		if _, ok := cutOverwritePrefix(l); ok {
+			t.Fatalf("clear should remove the overwrite line, still present: %v", m.lines)
+		}
+	}
+	if len(m.lines) != 1 {
+		t.Fatalf("expected only 'before' to remain after clear, got %v", m.lines)
+	}
+
+	// A clear for a key with no prior line is a no-op, not a crash.
+	before := len(m.lines)
+	m.applyEvent(core.Event{Kind: core.EvOverwrite, Key: "never-opened", Meta: map[string]string{"clear": "1"}})
+	if len(m.lines) != before {
+		t.Fatalf("clear with no matching line should be a no-op, lines changed: %v", m.lines)
+	}
+}
+
 func TestTUIThinkingUpdatesIndicator(t *testing.T) {
 	m := newTUIModel(func(string) {})
 	m.applyEvent(core.Event{Kind: core.EvThinking, Text: "thinking (~500 tokens)"})

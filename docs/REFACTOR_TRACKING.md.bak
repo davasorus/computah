@@ -17,7 +17,7 @@ All items above build and pass `go test ./...` / `go vet ./...`.
 
 `docs/ROADMAP_PHASE1_COMMUNICATION.md`'s success criterion ("zero fmt.Printf/fmt.Println in internal/agent") is broader than what this tracker covered. The following files still call `fmt.Print*` directly and were intentionally left out of this pass — they need their own review before migrating, because several are not "communication" in the Event Bus sense:
 
-- [x] **`internal/agent/term.go`** (done — see the "in-place/overwrite" feature section below): the spinner now goes through `emitOverwrite`/`emitClear`. The `> ` input prompt remains outside the Bus by design — it's the line editor's own redraw, not agent-owned status text.
+- **`internal/agent/term.go`**: raw ANSI cursor/erase codes (`\r\033[K`), the input prompt (`fmt.Print("> ")`), and the spinner line. These manipulate the terminal cursor in place; forcing them through the Event Bus (which is meant for discrete, one-shot lines a subscriber can render independently) would require Bus support for in-place/overwrite semantics first.
 - **`internal/agent/notify.go`**: `fmt.Print("\a")` (terminal bell) — arguably fine to leave as-is; not really an "event" a TUI/Web subscriber renders.
 - [x] **`internal/agent/tools.go`** (Phase 1b, done): tool-approval prompts, rejection/blocked messages, run_command trace lines, todo rendering, and `Sandbox.Summary()` migrated to `emitLine`/`emitLineC` (the agent-package aliases for `core.EmitLine`/`core.EmitLineC`). The two `fmt.Print("\033[2m"/"\033[0m")` calls in `ExecShell` are left as-is — they wrap *live-streamed* shell output in a dim ANSI code, which is in-place terminal control, not a discrete line the Bus model represents. Verified with `go build ./...` and `go test ./...`.
 - [x] **`internal/agent/session.go`** (Phase 1b, done): mid-turn context-pressure notices, `/sessions`, `/tree`, and `/compact` output migrated to `emitLine`/`emitLineC`.
@@ -30,28 +30,10 @@ All of the above build cleanly (`go build ./...`) and pass `go test ./...`.
 
 ## Remaining (deferred by design)
 
-- **`internal/agent/term.go`**: the spinner is migrated (see the feature section below). The `> ` input prompt redraw stays outside the Bus — it's the line editor's own mechanism, not agent-owned status text.
+- **`internal/agent/term.go`**: raw ANSI cursor/erase codes (`\r\033[K`), the input prompt (`fmt.Print("> ")`), and the spinner line. These manipulate the terminal cursor in place; forcing them through the Event Bus (which is meant for discrete, one-shot lines a subscriber can render independently) would require Bus support for in-place/overwrite semantics first.
 - **`internal/agent/notify.go`**: `fmt.Print("\a")` (terminal bell) — arguably fine to leave as-is; not really an "event" a TUI/Web subscriber renders.
 
-Phase 1b is otherwise complete: every `internal/agent` file with discrete, one-shot status/error output now goes through the Event Bus. What remains (the `term.go` input prompt, `notify.go`, the two dim-wrap codes in `tools.go`'s `ExecShell`, and the streamed-line newlines in `loop.go`) is in-place terminal control or a direct extension of already-streamed content, not "communication" in the Bus sense.
-
-## Feature: in-place/overwrite Bus semantics (done — unblocks `term.go`)
-
-`term.go`'s spinner (and similar rapidly-changing status text) couldn't move onto the Bus because the Bus only modeled discrete, one-shot lines — a subscriber had no way to know "this is the SAME line as before, replace it" versus "this is a new line, append it." This was called out above as the reason `term.go` was deferred.
-
-That gap is now closed, as a distinct feature addition (not more file-by-file `fmt.Print` migration):
-
-- **`internal/core/events.go`**: new `EvOverwrite` `EventKind`, a `Event.Key` field identifying the in-place line, and `EmitOverwrite(key, text, color)` / `EmitClear(key)` convenience emitters. `Meta["clear"]=="1"` means "remove the line for this Key," not just blank it.
-- **`internal/core/presentation.go`**: `EvOverwrite` has a canonical style entry (`RoleDim`), covered by `TestEveryEventKindHasAStyle`.
-- **`internal/agent/events_stdout.go`**: the stdout subscriber tracks at most one "open" in-place line; any other event first erases it (`\r\033[K`), matching how `term.go`'s spinner already erases itself once real output starts. Degrades to plain scrolling lines when there's no real terminal (`useColor` false).
-- **`internal/tui/tui.go`**: `applyOverwrite` finds-or-appends a transcript line tagged with the event's key (via an internal `\x00ow<key>\x00` marker) and replaces it in place, or removes it on clear, instead of appending a new line every update.
-- **`internal/web/dashboard.go`** / **`dashboard_html.go`**: SSE payloads carry `key`; the browser JS updates or removes a single DOM row per key instead of appending a scrolling trail.
-
-All three subscribers agree: repeated `EmitOverwrite(key, ...)` calls update ONE line/row; `EmitClear(key)` removes it; a subscriber that ignores `Key` entirely still renders something sane (a scrolling trail) rather than breaking. Covered by new tests in `internal/core/events_test.go`, `internal/agent/events_test.go`, and `internal/tui/tui_test.go`. `go build ./...` and `go test ./...` pass.
-
-- [x] **`internal/agent/term.go`** (follow-up, done): the spinner goroutine in `startSpinner` now calls `emitOverwrite("spinner", text, cDim)` on each tick instead of printing `\r\033[K\033[2m...\033[0m` directly, and `Stop()` calls `emitClear("spinner")` instead of `fmt.Print("\r\033[K")`. The stdout subscriber (already overwrite-aware) reproduces the same terminal look; TUI/dashboard sessions now see the spinner too, instead of it being invisible outside a raw stdout terminal. The `> ` prompt redraw is intentionally left alone — it's the line editor's own prompt, not a Bus event.
-
-That closes out the `term.go` item; the input-prompt piece was never in scope (it's `x/term`'s own redraw, not agent-owned status text).
+Phase 1b is otherwise complete: every `internal/agent` file with discrete, one-shot status/error output now goes through the Event Bus. What remains (`term.go`, `notify.go`, the two dim-wrap codes in `tools.go`'s `ExecShell`, and the streamed-line newlines in `loop.go`) is in-place terminal control or a direct extension of already-streamed content, not "communication" in the Bus sense — these need Bus support for in-place/overwrite rendering before they can move, or may stay as raw terminal control by design.
 
 ## Notes
 
