@@ -259,6 +259,13 @@ type Config struct {
 	NoCheckpoints     bool                       `json:"no_checkpoints,omitempty"`        // disable per-turn git snapshots
 	Hooks             map[string]string          `json:"hooks,omitempty"`                 // post_edit ({file}), pre_command ({cmd}), post_turn
 	MCPServers        map[string]MCPServerConfig `json:"mcp_servers,omitempty"`
+	MaxFixAttempts    int                        `json:"max_fix_attempts,omitempty"`    // verify-loop fix retries (default 2)
+	ChatRetryAttempts int                        `json:"chat_retry_attempts,omitempty"` // streamChat retry attempts on transient failure (default 2)
+	CapNudgeLimit     int                        `json:"cap_nudge_limit,omitempty"`     // cap-stall recovery nudges per turn (default 2)
+	ResumeTail        int                        `json:"resume_tail,omitempty"`         // messages restored by -resume (default 30)
+	SubtaskMaxDepth   int                        `json:"subtask_max_depth,omitempty"`   // subtask nesting cap (default 1)
+	ContextV2Budget   int                        `json:"context_v2_budget,omitempty"`   // v2 distilled-context token budget (default 6000)
+	ContextV2Window   int                        `json:"context_v2_window,omitempty"`   // v2 recent-dialogue message window (default 12)
 }
 
 func loadConfig() Config {
@@ -498,6 +505,27 @@ func Run(opts Options) int {
 	}
 	checkpointsOff = cfg.NoCheckpoints
 	hooks = cfg.Hooks
+	if cfg.MaxFixAttempts > 0 {
+		maxFixAttempts = cfg.MaxFixAttempts
+	}
+	if cfg.ChatRetryAttempts > 0 {
+		chatRetryAttempts = cfg.ChatRetryAttempts
+	}
+	if cfg.CapNudgeLimit > 0 {
+		capNudgeLimit = cfg.CapNudgeLimit
+	}
+	if cfg.ResumeTail > 0 {
+		resumeTail = cfg.ResumeTail
+	}
+	if cfg.SubtaskMaxDepth > 0 {
+		subtaskMaxDepth = cfg.SubtaskMaxDepth
+	}
+	if cfg.ContextV2Budget > 0 {
+		distillBudget = cfg.ContextV2Budget
+	}
+	if cfg.ContextV2Window > 0 {
+		contextV2Window = cfg.ContextV2Window
+	}
 
 	// Resolve base URL: explicit flag > config file > WSL2 gateway > localhost.
 	baseURL := strings.TrimRight(*urlFlag, "/")

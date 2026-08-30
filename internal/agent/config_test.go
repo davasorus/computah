@@ -18,7 +18,11 @@ func withTempHome(t *testing.T) string {
 func TestSaveAndLoadConfig(t *testing.T) {
 	withTempHome(t)
 
-	cfg := Config{URL: "http://localhost:1234/v1", Model: "m", MaxTokens: 16384}
+	cfg := Config{
+		URL: "http://localhost:1234/v1", Model: "m", MaxTokens: 16384,
+		MaxFixAttempts: 3, ChatRetryAttempts: 4, CapNudgeLimit: 5,
+		ResumeTail: 60, SubtaskMaxDepth: 2, ContextV2Budget: 9000, ContextV2Window: 20,
+	}
 	backup, err := SaveConfig(cfg)
 	if err != nil {
 		t.Fatalf("SaveConfig: %v", err)
@@ -32,6 +36,10 @@ func TestSaveAndLoadConfig(t *testing.T) {
 	}
 	if got.Model != "m" || got.MaxTokens != 16384 {
 		t.Errorf("round-trip mismatch: %+v", got)
+	}
+	if got.MaxFixAttempts != 3 || got.ChatRetryAttempts != 4 || got.CapNudgeLimit != 5 ||
+		got.ResumeTail != 60 || got.SubtaskMaxDepth != 2 || got.ContextV2Budget != 9000 || got.ContextV2Window != 20 {
+		t.Errorf("Phase 3 config field round-trip mismatch: %+v", got)
 	}
 }
 
