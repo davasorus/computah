@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -59,6 +60,56 @@ var statsTrace bool
 // with no tool calls) and nudge the model into acting instead of ending
 // the turn on words.
 var lastFinishReason string
+
+// ---------- Error classification ----------
+
+// ChatErrorKind classifies why a chat request failed, so callers can decide
+// whether retrying is worth it instead of treating every failure alike.
+type ChatErrorKind int
+
+const (
+	ErrKindUnknown    ChatErrorKind = iota
+	ErrKindEncode                   // building the request failed — a code/config bug, not the network
+	ErrKindConnection               // dial/TLS/DNS failure reaching the server
+	ErrKindTimeout                  // context deadline exceeded
+	ErrKindClient                   // HTTP 4xx — the request itself is bad
+	ErrKindRateLimit                // HTTP 429 — bad timing, not a bad request
+	ErrKindServer                   // HTTP 5xx — the server is unhealthy
+	ErrKindStream                   // connection dropped mid-SSE-stream
+	ErrKindModel                    // server reported an error object mid-stream (e.g. context length)
+)
+
+// ChatError wraps a chat() failure with enough context for the caller to
+// decide retryable vs. fatal without string-matching error messages.
+type ChatError struct {
+	Kind      ChatErrorKind
+	Retryable bool
+	Status    int   // HTTP status code, 0 if not applicable
+	Err       error // the underlying error
+}
+
+func (e *ChatError) Error() string { return e.Err.Error() }
+func (e *ChatError) Unwrap() error { return e.Err }
+
+// retryable reports whether err (as returned by chat()) is worth retrying.
+// Unclassified errors default to retryable — a safety net matching the
+// pre-classification behavior, so nothing regresses if an error path is
+// ever missed. Every chat() return site should classify explicitly rather
+// than rely on this default.
+func retryable(err error) bool {
+	var ce *ChatError
+	if errors.As(err, &ce) {
+		return ce.Retryable
+	}
+	return true
+}
+
+// errStreamModel marks a mid-stream error reported BY THE SERVER (e.g.
+// context length exceeded) — usually a real, permanent problem with this
+// request, so chat() classifies it as fatal rather than retrying the same
+// too-long prompt. Any other parseSSE error (a dropped connection, an I/O
+// read failure) is a transient stream break and stays retryable.
+var errStreamModel = errors.New("model/server stream error")
 
 // ---------- Tool definitions ----------
 
@@ -119,20 +170,24 @@ func chat(ctx context.Context, baseURL, model string, messages []Message, onToke
 	}
 	body, err := json.Marshal(req)
 	if err != nil {
-		return Message{}, err
+		return Message{}, &ChatError{Kind: ErrKindEncode, Retryable: false, Err: err}
 	}
 	start := time.Now()
 	var firstByte time.Time
 	promptTok := estimateTokens(messages)
 	httpReq, err := http.NewRequestWithContext(ctx, "POST", baseURL+"/v1/chat/completions", bytes.NewReader(body))
 	if err != nil {
-		return Message{}, err
+		return Message{}, &ChatError{Kind: ErrKindEncode, Retryable: false, Err: err}
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	setAuth(httpReq)
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
-		return Message{}, err
+		kind := ErrKindConnection
+		if errors.Is(err, context.DeadlineExceeded) {
+			kind = ErrKindTimeout
+		}
+		return Message{}, &ChatError{Kind: kind, Retryable: true, Err: err}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -144,10 +199,22 @@ func chat(ctx context.Context, baseURL, model string, messages []Message, onToke
 			} `json:"error"`
 		}
 		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+		var msgErr error
 		if json.Unmarshal(raw, &e) == nil && e.Error != nil {
-			return Message{}, fmt.Errorf("server: %s", e.Error.Message)
+			msgErr = fmt.Errorf("server: %s", e.Error.Message)
+		} else {
+			msgErr = fmt.Errorf("server returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
 		}
-		return Message{}, fmt.Errorf("server returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw)))
+		ce := &ChatError{Status: resp.StatusCode, Err: msgErr}
+		switch {
+		case resp.StatusCode == http.StatusTooManyRequests:
+			ce.Kind, ce.Retryable = ErrKindRateLimit, true
+		case resp.StatusCode >= 500:
+			ce.Kind, ce.Retryable = ErrKindServer, true
+		default:
+			ce.Kind, ce.Retryable = ErrKindClient, false
+		}
+		return Message{}, ce
 	}
 
 	onFirstByte = func() { firstByte = time.Now() } // any delta, incl. reasoning
@@ -180,6 +247,11 @@ func chat(ctx context.Context, baseURL, model string, messages []Message, onToke
 	if err != nil {
 		if strings.TrimSpace(msg.Content) == "" && len(msg.ToolCalls) == 0 && think.chars > 0 {
 			msg.Content = "(interrupted while reasoning; the model's last thoughts:)\n..." + think.tail
+		}
+		if errors.Is(err, errStreamModel) {
+			err = &ChatError{Kind: ErrKindModel, Retryable: false, Err: err}
+		} else {
+			err = &ChatError{Kind: ErrKindStream, Retryable: true, Err: err}
 		}
 		return msg, err
 	}
@@ -282,7 +354,7 @@ func parseSSE(r io.Reader, onToken func(string)) (Message, string, reasoningStat
 			continue // tolerate keep-alives / unknown frames
 		}
 		if c.Error != nil {
-			return msg, finish, think, fmt.Errorf("server: %s", c.Error.Message)
+			return msg, finish, think, fmt.Errorf("%w: %s", errStreamModel, c.Error.Message)
 		}
 		if len(c.Choices) == 0 {
 			continue

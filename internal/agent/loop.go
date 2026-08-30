@@ -108,12 +108,21 @@ func streamChat(baseURL, model string, messages []Message) (Message, bool, error
 		onToolProgress, onReasoning = nil, nil
 		sp.Stop()
 		mdw.Flush()
-		// Retry only when: it failed, wasn't a user interrupt, and nothing
-		// was printed yet (retrying after partial output would duplicate it).
-		if err != nil && !intr && !streamed && attempt < maxAttempts {
-			core.EmitStatus(fmt.Sprintf("  (request failed: %v — retrying once)", err))
-			time.Sleep(time.Second)
-			continue
+		// Retry only when: it failed, wasn't a user interrupt, nothing was
+		// printed yet (retrying after partial output would duplicate it),
+		// and the failure is classified as worth retrying — a fatal error
+		// (bad model, malformed request, HTTP 4xx) surfaces immediately
+		// instead of waiting out a pointless 1-second sleep first.
+		if err != nil && !intr && !streamed {
+			if !retryable(err) {
+				core.EmitError(fmt.Sprintf("  (request failed, not retrying: %v)", err))
+				break
+			}
+			if attempt < maxAttempts {
+				core.EmitStatus(fmt.Sprintf("  (request failed: %v — retrying once)", err))
+				time.Sleep(time.Second)
+				continue
+			}
 		}
 		break
 	}
