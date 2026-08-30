@@ -534,9 +534,9 @@ func (s *Sandbox) toolUpdateTodos(a toolArgs) string {
 func renderTodos() {
 	for _, t := range todos {
 		if t.Done {
-			fmt.Println(tint(cDim, "    ☑ "+t.Text))
+			emitLineC(cDim, "    ☑ "+t.Text)
 		} else {
-			fmt.Println("    ☐ " + t.Text)
+			emitLine("    ☐ " + t.Text)
 		}
 	}
 }
@@ -613,7 +613,7 @@ func (s *Sandbox) Execute(name string, args map[string]any) (result string) {
 	defer func() {
 		if r := recover(); r != nil {
 			result = fmt.Sprintf("ERROR: tool %s panicked: %v", name, r)
-			fmt.Println(tint(cRed, "  ✗ "+result))
+			emitLineC(cRed, "  ✗ "+result)
 		}
 	}()
 	t, ok := toolByName[name]
@@ -621,7 +621,7 @@ func (s *Sandbox) Execute(name string, args map[string]any) (result string) {
 		return "ERROR: unknown tool " + name
 	}
 	if planMode && !readOnlyTools[name] && name != "update_todos" {
-		fmt.Println(tint(cYellow, "  ✗ blocked (plan mode): "+core.LogSafe(name)))
+		emitLineC(cYellow, "  ✗ blocked (plan mode): "+core.LogSafe(name))
 		return "ERROR: plan mode is read-only — no modifications until the user approves the plan. Include this step in the plan instead."
 	}
 	result = t.Handler(s, toolArgs(args))
@@ -667,26 +667,26 @@ func (s *Sandbox) toolReadFile(a toolArgs) string {
 func (s *Sandbox) toolWriteFile(a toolArgs) string {
 	rel := a.str("path")
 	if isProtected(rel) {
-		fmt.Println(tint(cRed, "  ✗ REJECTED write to "+core.LogSafe(rel)+" (protected path)"))
+		emitLineC(cRed, "  ✗ REJECTED write to "+core.LogSafe(rel)+" (protected path)")
 		return "ERROR: " + rel + " matches a protected pattern (key material / user-configured). The agent may not write it; ask the user to change it themselves if needed."
 	}
 	// Models sometimes try to "create a directory" by writing a bare
 	// directory path; that creates a file that then blocks the real
 	// writes, so reject it with a corrective message.
 	if strings.HasSuffix(rel, "/") || strings.HasSuffix(rel, "\\") {
-		fmt.Println(tint(cRed, fmt.Sprintf("  ✗ REJECTED write to %s (directory path)", core.LogSafe(rel))))
+		emitLineC(cRed, fmt.Sprintf("  ✗ REJECTED write to %s (directory path)", core.LogSafe(rel)))
 		return "ERROR: path is a directory. Directories are created automatically when you write a file inside them; write a file instead."
 	}
 	// Empty or placeholder content is a hallucination tripwire.
 	content := a.str("content")
 	trimmed := strings.TrimSpace(content)
 	if trimmed == "" || (strings.HasPrefix(trimmed, "<") && strings.HasSuffix(trimmed, ">") && !strings.Contains(trimmed, "\n")) {
-		fmt.Println(tint(cRed, fmt.Sprintf("  ✗ REJECTED write to %s (empty/placeholder content)", core.LogSafe(rel))))
+		emitLineC(cRed, fmt.Sprintf("  ✗ REJECTED write to %s (empty/placeholder content)", core.LogSafe(rel)))
 		return "ERROR: empty or placeholder content rejected. Write the file's FULL, final content."
 	}
 	path, err := s.resolve(rel)
 	if err != nil {
-		fmt.Println(tint(cRed, fmt.Sprintf("  ✗ REJECTED write to %s (%v)", core.LogSafe(rel), err)))
+		emitLineC(cRed, fmt.Sprintf("  ✗ REJECTED write to %s (%v)", core.LogSafe(rel), err))
 		return "ERROR: " + err.Error()
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -1102,12 +1102,12 @@ func (s *Sandbox) toolFetchURL(a toolArgs) string {
 	// Human in the loop: fetching hits the network, so always confirm
 	// (except in non-interactive -yes mode, where there's no one to ask).
 	if assumeYes {
-		fmt.Println(tint(cDim, "  🌐 "+raw+" (auto-approved: -yes)"))
+		emitLineC(cDim, "  🌐 "+raw+" (auto-approved: -yes)")
 	} else {
-		fmt.Println(tint(cCyan, "  🌐 "+raw))
+		emitLineC(cCyan, "  🌐 "+raw)
 		notifyApproval("fetch " + raw)
 		if approvals.request("    fetch this URL? [y/N] ", "fetch") == approveDeny {
-			fmt.Println("    (declined)")
+			emitLine("    (declined)")
 			return "User declined to fetch this URL."
 		}
 	}
@@ -1131,7 +1131,7 @@ func (s *Sandbox) toolFetchURL(a toolArgs) string {
 		text = text[:limit]
 		truncated = "\n...[truncated at 100KB]"
 	}
-	fmt.Println(tint(cDim, fmt.Sprintf("    (fetched %d bytes, HTTP %d)", len(body), resp.StatusCode)))
+	emitLineC(cDim, fmt.Sprintf("    (fetched %d bytes, HTTP %d)", len(body), resp.StatusCode))
 	return fmt.Sprintf("HTTP %d, %s\n\n%s%s", resp.StatusCode, resp.Header.Get("Content-Type"), text, truncated)
 }
 
@@ -1244,14 +1244,14 @@ func (s *Sandbox) toolRunCommand(a toolArgs) string {
 	// Human in the loop: mutating commands need explicit approval.
 	// Read-only commands on the allowlist run without the prompt.
 	if builtinAutoApproved(cmdStr) {
-		fmt.Println(tint(cDim, fmt.Sprintf("  $ %s (auto-approved: read-only)", core.LogSafe(cmdStr))))
+		emitLineC(cDim, fmt.Sprintf("  $ %s (auto-approved: read-only)", core.LogSafe(cmdStr)))
 	} else if autoApproved(cmdStr) {
-		fmt.Println(tint(cDim, fmt.Sprintf("  $ %s (auto-approved: on your allowlist)", core.LogSafe(cmdStr))))
+		emitLineC(cDim, fmt.Sprintf("  $ %s (auto-approved: on your allowlist)", core.LogSafe(cmdStr)))
 	} else if assumeYes {
-		fmt.Println(tint(cDim, fmt.Sprintf("  $ %s (auto-approved: -yes)", core.LogSafe(cmdStr))))
+		emitLineC(cDim, fmt.Sprintf("  $ %s (auto-approved: -yes)", core.LogSafe(cmdStr)))
 	} else {
 		tok := strings.Fields(cmdStr)[0]
-		fmt.Println(tint(cCyan, "  $ "+core.LogSafe(cmdStr)))
+		emitLineC(cCyan, "  $ "+core.LogSafe(cmdStr))
 		notifyApproval("run: " + cmdStr)
 		prompt := fmt.Sprintf("    run this in %s? [y/N/a=always allow %q] ", s.Root, tok)
 		switch approvals.request(prompt, tok) {
@@ -1259,17 +1259,17 @@ func (s *Sandbox) toolRunCommand(a toolArgs) string {
 			// approved for this run only
 		case approveAlways:
 			if msg := appendAllow(tok + " "); msg != "" {
-				fmt.Println("    (allowlist error: " + msg + " — running once anyway)")
+				emitLine("    (allowlist error: " + msg + " — running once anyway)")
 			} else {
-				fmt.Printf("    (added %q to the allowlist — future %s commands run without asking)\n", tok+" ", tok)
+				emitLine(fmt.Sprintf("    (added %q to the allowlist — future %s commands run without asking)", tok+" ", tok))
 			}
 		default:
-			fmt.Println("    (declined)")
+			emitLine("    (declined)")
 			return "User declined to run this command. Do not retry it; ask the user what to do instead if needed."
 		}
 	}
 	if out, ok := runHook("pre_command", map[string]string{"cmd": cmdStr}); !ok {
-		fmt.Println(tint(cYellow, "  ✗ blocked by pre_command hook"))
+		emitLineC(cYellow, "  ✗ blocked by pre_command hook")
 		return "ERROR: blocked by the user's pre_command hook:\n" + tail(out, 2048)
 	}
 	result, exitCode, err := execShell(cmdStr, s.Root, true)
@@ -1282,16 +1282,16 @@ func (s *Sandbox) toolRunCommand(a toolArgs) string {
 // Summary prints every file modified this session, deduplicated in order.
 func (s *Sandbox) Summary() {
 	if len(s.Modified) == 0 {
-		fmt.Println("\nNo files were modified this session.")
+		emitLine("\nNo files were modified this session.")
 		return
 	}
-	fmt.Println("\nFiles modified this session:")
+	emitLine("\nFiles modified this session:")
 	seen := map[string]bool{}
 	for _, p := range s.Modified {
 		if !seen[p] {
 			seen[p] = true
-			fmt.Println("  " + p)
+			emitLine("  " + p)
 		}
 	}
-	fmt.Println("(overwritten/edited files have a .bak backup alongside them)")
+	emitLine("(overwritten/edited files have a .bak backup alongside them)")
 }
