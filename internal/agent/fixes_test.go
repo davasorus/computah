@@ -191,6 +191,10 @@ func TestShrinkLeavesSmallResultsAlone(t *testing.T) {
 }
 
 func TestAutoApprovedCode(t *testing.T) {
+	// Isolate from the real user's ~/.agent/allow.txt: autoApproved consults
+	// userAllowPrefixes(), and without this the test's result depends on
+	// whatever prefixes a real session has accumulated on this machine.
+	t.Setenv("HOME", t.TempDir())
 	cases := map[string]bool{
 		"code":                        true,  // exact
 		"code .":                      true,  // open workdir

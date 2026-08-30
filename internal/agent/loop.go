@@ -111,7 +111,7 @@ func streamChat(baseURL, model string, messages []Message) (Message, bool, error
 		// Retry only when: it failed, wasn't a user interrupt, and nothing
 		// was printed yet (retrying after partial output would duplicate it).
 		if err != nil && !intr && !streamed && attempt < maxAttempts {
-			core.EmitLineC(cDim, fmt.Sprintf("  (request failed: %v — retrying once)", err))
+			core.EmitStatus(fmt.Sprintf("  (request failed: %v — retrying once)", err))
 			time.Sleep(time.Second)
 			continue
 		}
@@ -165,14 +165,14 @@ func RunTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Me
 				note += fmt.Sprintf(" [Checklist: %d/%d done — update it if that's stale.]", done, len(todos))
 			}
 			messages = append(messages, Message{Role: "user", Content: note})
-			core.EmitLineC(cDim, fmt.Sprintf("  (progress check injected at %d calls)", iters))
+			core.EmitStatus(fmt.Sprintf("  (progress check injected at %d calls)", iters))
 		}
 		// Hard budget: past this, the turn ends with an accounting rather
 		// than wandering forever. Config "max_turn_iters"; generous default
 		// because legitimate big refactors are long — this is a circuit
 		// breaker, not a leash.
 		if iters > maxTurnIters {
-			core.EmitLineC(cRed, fmt.Sprintf("  (turn budget: %d tool calls — stopping)", maxTurnIters))
+			core.EmitError(fmt.Sprintf("  (turn budget: %d tool calls — stopping)", maxTurnIters))
 			messages = append(messages, Message{Role: "user", Content: "[Turn budget reached. Stop calling tools. Summarize what you accomplished, what remains, and what you recommend next.]"})
 			if final, intr, err := streamChat(baseURL, model, messages); err == nil && !intr {
 				messages = append(messages, final)
@@ -198,7 +198,7 @@ func RunTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Me
 			// it preserved (plus the task anchor in the marker), a bare
 			// "continue" or a one-line correction resumes from where the
 			// model actually was.
-			core.EmitLineC(cDim, "\n(turn interrupted — back to you)")
+			core.EmitStatus("\n(turn interrupted — back to you)")
 			if strings.TrimSpace(reply.Content) != "" {
 				reply.ToolCalls = nil
 				reply.Content += "\n[reply cut off here by the user's interrupt]"

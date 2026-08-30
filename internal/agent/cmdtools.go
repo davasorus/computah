@@ -87,15 +87,15 @@ func loadCommandTools(root string) {
 			}
 			var m cmdToolManifest
 			if err := json.Unmarshal(data, &m); err != nil {
-				fmt.Printf("command tool %s: bad manifest (%v) — skipped\n", core.LogSafe(e.Name()), err)
+				core.EmitStatus("command tool " + core.LogSafe(e.Name()) + ": bad manifest (" + fmt.Sprint(err) + ") — skipped")
 				continue
 			}
 			if m.Name == "" || len(m.Command) == 0 {
-				fmt.Printf("command tool %s: needs a name and a non-empty command — skipped\n", core.LogSafe(e.Name()))
+				core.EmitStatus("command tool " + core.LogSafe(e.Name()) + ": needs a name and a non-empty command — skipped")
 				continue
 			}
 			if _, isBuiltin := toolByName[m.Name]; isBuiltin && !loaded[m.Name] {
-				fmt.Printf("command tool %q ignored — shadows a built-in tool\n", core.LogSafe(m.Name))
+				core.EmitStatus("command tool " + core.LogSafe(m.Name) + " ignored — shadows a built-in tool")
 				continue
 			}
 			registerTools(makeCommandTool(m, root))
@@ -111,7 +111,7 @@ func loadCommandTools(root string) {
 	if len(names) > 0 {
 		buildToolSchemas()
 		sort.Strings(names)
-		core.EmitLineC(cDim, "command tools: "+strings.Join(names, " "))
+		core.EmitStatus("command tools: " + strings.Join(names, " "))
 	}
 }
 
@@ -175,13 +175,13 @@ func runCommandTool(s *Sandbox, m cmdToolManifest, root string, timeout time.Dur
 	// Non-read-only command tools need approval, same gate as run_command.
 	display := strings.Join(argv, " ")
 	if !m.ReadOnly {
-		core.EmitLineC(cDim, "  ⚙ "+core.LogSafe(m.Name)+": "+core.LogSafe(display))
+		core.EmitStatus("  ⚙ " + core.LogSafe(m.Name) + ": " + core.LogSafe(display))
 		notifyApproval("run command tool: " + m.Name)
 		if approvals.request("    run this command tool? [y/N] ", m.Name) == approveDeny {
 			return "User declined to run the command tool " + m.Name + "."
 		}
 	} else {
-		core.EmitLineC(cDim, "  ⚙ "+core.LogSafe(m.Name)+" (read-only)")
+		core.EmitStatus("  ⚙ " + core.LogSafe(m.Name) + " (read-only)")
 	}
 
 	// Provide args as JSON on stdin as well, for scripts that prefer it.

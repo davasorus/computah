@@ -25,11 +25,13 @@ package agent
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/davasorus/computah/internal/core"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
+
+	"github.com/davasorus/computah/internal/core"
 )
 
 // forceEval skips the preflight (dirty-tree + baseline-build) checks.
@@ -46,7 +48,7 @@ type evalCase struct {
 // and exits. Returns a process exit code: 0 on success, 1 on error.
 func runOneShot(root string, sb *Sandbox, prompt string) int {
 	if !assumeYes {
-		fmt.Println("(tip: -p without -yes will still stop to ask about mutating commands)")
+		core.EmitStatus("(tip: -p without -yes will still stop to ask about mutating commands)")
 	}
 	st := newSessionStore(root)
 	messages := []Message{
@@ -61,7 +63,7 @@ func runOneShot(root string, sb *Sandbox, prompt string) int {
 	st.Append(messages)
 	sb.Summary()
 	if st.file != nil {
-		fmt.Println("session saved:", st.Path())
+		core.EmitStatus("session saved: " + st.Path())
 	}
 	return 0
 }
@@ -71,16 +73,16 @@ func runOneShot(root string, sb *Sandbox, prompt string) int {
 func runEval(root, path string, runs int) int {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		fmt.Println("eval:", err)
+		core.EmitError("eval: " + err.Error())
 		return 1
 	}
 	var cases []evalCase
 	if err := json.Unmarshal(data, &cases); err != nil {
-		fmt.Println("eval: bad eval file:", err)
+		core.EmitError("eval: bad eval file: " + err.Error())
 		return 1
 	}
 	if len(cases) == 0 {
-		fmt.Println("eval: no cases in file")
+		core.EmitError("eval: no cases in file")
 		return 1
 	}
 	if runs < 1 {
@@ -93,10 +95,7 @@ func runEval(root, path string, runs int) int {
 	if !forceEval {
 		if inGitRepo(root) {
 			if status, _ := gitRun(root, "status", "--porcelain"); strings.TrimSpace(status) != "" {
-				fmt.Println("eval: REFUSED — the working tree has uncommitted changes, and eval setups reset tracked files.")
-				fmt.Println("  Commit or stash your work, or run evals in a worktree:")
-				fmt.Println("    git worktree add -b eval-scratch ../" + filepath.Base(root) + "-eval HEAD")
-				fmt.Println("  Override (dangerous): -force-eval")
+				core.EmitError("eval: REFUSED — the working tree has uncommitted changes, and eval setups reset tracked files.\n  Commit or stash your work, or run evals in a worktree:\n    git worktree add -b eval-scratch ../" + filepath.Base(root) + "-eval HEAD\n  Override (dangerous): -force-eval")
 				return 1
 			}
 		}
@@ -108,9 +107,7 @@ func runEval(root, path string, runs int) int {
 		}
 		if buildCmd != "" {
 			if out, code, err := execShell(buildCmd, root, false); err != nil || code != 0 {
-				fmt.Println("eval: REFUSED — the baseline doesn't build; every check would fail regardless of the model.")
-				fmt.Println(tail(out, 1024))
-				fmt.Println("  Fix the tree (or commit the fixes) first. Override: -force-eval")
+				core.EmitError("eval: REFUSED — the baseline doesn't build; every check would fail regardless of the model.\n" + tail(out, 1024) + "\n  Fix the tree (or commit the fixes) first. Override: -force-eval")
 				return 1
 			}
 		}
@@ -120,7 +117,7 @@ func runEval(root, path string, runs int) int {
 	assumeYes = true
 	statsTrace = true // per-request timing lines: the KV-cache diagnostic
 
-	core.EmitLineC(cDim, fmt.Sprintf("eval: %d case(s) × %d run(s) — model=%s workDirc=%s\n", len(cases), runs, curModel, root))
+	core.EmitStatus(fmt.Sprintf("eval: %d case(s) × %d run(s) — model=%s workDirc=%s\n", len(cases), runs, curModel, root))
 	type result struct {
 		name   string
 		passes int
@@ -130,16 +127,16 @@ func runEval(root, path string, runs int) int {
 	allPassed := true
 	for _, c := range cases {
 		if c.Name == "" || c.Prompt == "" || c.Check == "" {
-			fmt.Printf("== %s: skipped (name, prompt, and check are all required)\n", c.Name)
+			core.EmitStatus("== " + c.Name + ": skipped (name, prompt, and check are all required)")
 			allPassed = false
 			continue
 		}
 		r := result{name: c.Name}
 		for run := 1; run <= runs; run++ {
-			fmt.Printf("== %s (run %d/%d)\n", c.Name, run, runs)
+			core.EmitStatus("== " + c.Name + " (run " + strconv.Itoa(run) + "/" + strconv.Itoa(runs) + ")")
 			if c.Setup != "" {
 				if out, code, err := execShell(c.Setup, root, false); err != nil || code != 0 {
-					fmt.Printf("%s setup failed:\n%s\n\n", tint(cYellow, "   SKIP"), tail(out, 1024))
+					core.EmitError("Setup failed (Skipping case):\n" + strings.TrimSpace(tail(out, 1024)))
 					allPassed = false
 					continue
 				}
@@ -184,15 +181,15 @@ func runEval(root, path string, runs int) int {
 				elapsed, dReq, dPrompt/1000, dThink, dGen, dTTFB.Round(time.Second))
 			if err == nil && code == 0 {
 				r.passes++
-				fmt.Printf("%s (%s)\n\n", tint(cGreen, "   PASS"), detail)
+				core.EmitStatus(fmt.Sprintf("%s (%s)", tint(cGreen, "   PASS"), detail))
 			} else {
 				allPassed = false
-				fmt.Printf("%s (%s)\n%s\n\n", tint(cRed, "   FAIL"), detail, tail(out, 1024))
+				core.EmitError(fmt.Sprintf("%s (%s)\n%s\n\n", tint(cRed, "   FAIL"), detail, tail(out, 1024)))
 			}
 		}
 		results = append(results, r)
 	}
-	fmt.Println("---- eval summary ----")
+	core.EmitStatus("---- eval summary ----")
 	for _, r := range results {
 		var total time.Duration
 		for _, t := range r.times {
@@ -202,7 +199,7 @@ func runEval(root, path string, runs int) int {
 		if len(r.times) > 0 {
 			avg = (total / time.Duration(len(r.times))).Round(time.Second)
 		}
-		fmt.Printf("  %-30s %d/%d passed  (avg %v)\n", r.name, r.passes, runs, avg)
+		core.EmitStatus("  -" + fmt.Sprintf("%-28s %d/%d passed  (avg %v)", r.name, r.passes, runs, avg))
 	}
 	if allPassed {
 		return 0

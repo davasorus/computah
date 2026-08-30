@@ -22,6 +22,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/davasorus/computah/internal/core"
 )
 
 // customCommands maps name (without slash) → template body.
@@ -46,7 +48,7 @@ func loadCustomCommands(root string) {
 			}
 			name := strings.TrimSuffix(e.Name(), ".md")
 			if isBuiltinCommand(name) {
-				fmt.Printf("(custom command /%s ignored — shadows a built-in)\n", name)
+				core.EmitStatus(fmt.Sprintf("(custom command /%s ignored — shadows a built-in)", name))
 				continue
 			}
 			data, err := os.ReadFile(filepath.Join(dir, e.Name()))
@@ -63,7 +65,7 @@ func loadCustomCommands(root string) {
 			replCommands = append(replCommands, "/"+n) // Tab completion
 		}
 		sort.Strings(names)
-		fmt.Println("custom commands:", strings.Join(names, " "))
+		core.EmitStatus("custom commands: " + strings.Join(names, " "))
 	}
 }
 

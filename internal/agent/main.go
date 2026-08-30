@@ -522,8 +522,8 @@ func Run(opts Options) int {
 	if model == "" {
 		m, err := firstModel(baseURL)
 		if err != nil {
-			fmt.Printf("can't reach %s or no usable model: %v\n", baseURL, err)
-			fmt.Println("Is LM Studio's server running and reachable?")
+			core.EmitError(fmt.Sprintf("can't reach %s or no usable model: %v", baseURL, err))
+			core.EmitError("Is LM Studio's server running and reachable?")
 			os.Exit(1)
 		}
 		model = m
@@ -590,7 +590,7 @@ func Run(opts Options) int {
 
 	messages := []Message{{Role: "system", Content: buildSystemPrompt(root)}}
 	if strings.Contains(messages[0].Content, "AGENTS.md ---") {
-		fmt.Println("loaded AGENTS.md instructions")
+		core.EmitStatus("loaded AGENTS.md instructions")
 	}
 
 	st := newSessionStore(root)
@@ -604,22 +604,22 @@ func Run(opts Options) int {
 			path, err = st.resolveSession(*resumeFlag)
 		}
 		if err != nil {
-			fmt.Println("resume:", err)
+			core.EmitError("resume: " + err.Error())
 		} else if hist, herr := loadSession(path, resumeTail); herr != nil {
-			fmt.Println("resume:", herr)
+			core.EmitError("resume: " + herr.Error())
 		} else {
 			messages = append(messages, hist...)
-			fmt.Printf("resumed %d messages from %s\n", len(hist), filepath.Base(path))
-			fmt.Println("(note: the first request reprocesses the resumed context — expect a slower first turn)")
+			core.EmitStatus(fmt.Sprintf("resumed %d messages from %s", len(hist), filepath.Base(path)))
+			core.EmitStatus("(note: the first request reprocesses the resumed context — expect a slower first turn)")
 		}
 	}
 	st.Append(messages) // new session file starts with system prompt (+ resumed tail)
 
-	fmt.Printf("agent ready — server=%s model=%s workdir=%s (Ctrl+C interrupts a turn, Ctrl+D quits)\n", baseURL, model, root)
-	fmt.Println(`trace: ⚙ = tool call | ✏ = file written/edited | ✗ = rejected | $ = command | ⧉ = subtask | """ = multi-line`)
-	fmt.Println(`commands: /help /plan /init /verify /commit /rewind /stats /budget /models /effort /reload /fork /tree /ctx /compact /context /undo /resume /sessions /tools /model /allow /copy — Tab completes, ↑ recalls, ! runs shell, @file attaches`)
+	core.EmitStatus(fmt.Sprintf("agent ready — server=%s model=%s workdir=%s (Ctrl+C interrupts a turn, Ctrl+D quits)", baseURL, model, root))
+	core.EmitStatus(`trace: ⚙ = tool call | ✏ = file written/edited | ✗ = rejected | $ = command | ⧉ = subtask | """ = multi-line`)
+	core.EmitLine(`commands: /help /plan /init /verify /commit /rewind /stats /budget /models /effort /reload /fork /tree /ctx /compact /context /undo /resume /sessions /tools /model /allow /copy — Tab completes, ↑ recalls, ! runs shell, @file attaches`)
 	if verifyCommand != "" {
-		fmt.Printf("verify: `%s` runs after any turn that modifies files\n", verifyCommand)
+		core.EmitStatus(fmt.Sprintf("verify: `%s` runs after any turn that modifies files", verifyCommand))
 	}
 
 	// -tui: run the full-screen interface instead of the REPL. It's a
@@ -645,7 +645,7 @@ func Run(opts Options) int {
 	}
 
 	for {
-		fmt.Println(statusLine(model, messages, root))
+		core.EmitStatus(statusLine(model, messages, root))
 		// Drain any browser (dashboard) submission first — non-blocking — so
 		// a prompt sent while idle is picked up without a terminal Enter.
 		// Otherwise block on terminal input as normal. (Sequential by design:
@@ -656,7 +656,7 @@ func Run(opts Options) int {
 		var ok bool
 		if q := core.DrainBrowserSubmission(); q != "" {
 			input, ok = q, true
-			fmt.Println(tint(cDim, "  (from dashboard) ") + q)
+			core.EmitStatus(tint(cDim, "  (from dashboard) ") + q)
 		} else {
 			input, ok = readInput()
 		}
@@ -684,7 +684,7 @@ func Run(opts Options) int {
 				Content: fmt.Sprintf("[shell] $ %s (%s)\n%s", cmdStr, detail, tail(out, 8192)),
 			})
 			st.Append(messages)
-			fmt.Println(tint(cDim, fmt.Sprintf("  (%s — output added to context)", detail)))
+			core.EmitStatus(tint(cDim, fmt.Sprintf("  (%s — output added to context)", detail)))
 			continue
 		}
 		// Read-only/informational commands go through the shared dispatcher
@@ -692,7 +692,7 @@ func Run(opts Options) int {
 		// inline handlers below.
 		if strings.HasPrefix(input, "/") {
 			if out, handled := runInfoCommand(input, baseURL, model, messages, st); handled {
-				fmt.Print(out)
+				core.EmitLine(out)
 				continue
 			}
 		}
@@ -702,13 +702,13 @@ func Run(opts Options) int {
 		}
 		if input == "/resume" {
 			if path, err := st.pickSession(); err != nil {
-				fmt.Println("resume:", err)
+				core.EmitError("resume: " + err.Error())
 			} else if hist, herr := loadSession(path, resumeTail); herr != nil {
-				fmt.Println("resume:", herr)
+				core.EmitError("resume: " + herr.Error())
 			} else {
 				messages = append(messages, hist...)
 				st.Append(messages)
-				fmt.Printf("pulled %d messages from %s into this session\n", len(hist), filepath.Base(path))
+				core.EmitStatus(fmt.Sprintf("pulled %d messages from %s into this session", len(hist), filepath.Base(path)))
 			}
 			continue
 		}
@@ -732,15 +732,15 @@ func Run(opts Options) int {
 				if plan == "" {
 					plan = "(same as normal)"
 				}
-				fmt.Printf("reasoning effort: %s · plan mode: %s — /effort low|medium|high|off\n", cur, plan)
+				core.EmitStatus(fmt.Sprintf("reasoning effort: %s · plan mode: %s — /effort low|medium|high|off", cur, plan))
 			case "off":
 				reasoningEffort = ""
-				fmt.Println("reasoning_effort no longer sent — server default applies")
+				core.EmitStatus("reasoning_effort no longer sent — server default applies")
 			case "low", "medium", "high":
 				reasoningEffort = arg
-				fmt.Printf("reasoning effort → %s (takes effect next request)\n", core.LogSafe(arg))
+				core.EmitStatus(fmt.Sprintf("reasoning effort → %s (takes effect next request)", core.LogSafe(arg)))
 			default:
-				fmt.Println("usage: /effort [low|medium|high|off]")
+				core.EmitStatus("usage: /effort [low|medium|high|off]")
 			}
 			continue
 		}
@@ -755,25 +755,25 @@ func Run(opts Options) int {
 				if contextV2 {
 					mode = "v2 (distilled per turn — experimental)"
 				}
-				fmt.Println("context mode:", mode, "— /ctx v1 | /ctx v2")
+				core.EmitStatus("context mode: " + mode + " — /ctx v1 | /ctx v2")
 			case "v2":
 				contextV2 = true
-				fmt.Println("context v2 ON — each turn sends a distilled context; watch /stats TTFB for the reprocess cost")
+				core.EmitStatus("context v2 ON — each turn sends a distilled context; watch /stats TTFB for the reprocess cost")
 			case "v1":
 				contextV2 = false
-				fmt.Println("context v1 — full transcript resumes next turn")
+				core.EmitStatus("context v1 — full transcript resumes next turn")
 			default:
-				fmt.Println("usage: /ctx [v1|v2]")
+				core.EmitStatus("usage: /ctx [v1|v2]")
 			}
 			continue
 		}
 		if input == "/fork" {
 			name, err := st.Fork(messages)
 			if err != nil {
-				fmt.Println("fork:", err)
+				core.EmitError("fork: " + err.Error())
 				continue
 			}
-			fmt.Printf("forked — now writing to %s; the original session is frozen (return to it with /resume)\n", core.LogSafe(name))
+			core.EmitStatus(fmt.Sprintf("forked — now writing to %s; the original session is frozen (return to it with /resume)", core.LogSafe(name)))
 			continue
 		}
 		if input == "/reload" {
@@ -782,7 +782,7 @@ func Run(opts Options) int {
 		}
 		if input == "/todos" {
 			if len(todos) == 0 {
-				fmt.Println("no checklist — the model maintains one via update_todos on multi-step work")
+				core.EmitStatus("no checklist — the model maintains one via update_todos on multi-step work")
 			} else {
 				renderTodos()
 			}
@@ -803,7 +803,7 @@ func Run(opts Options) int {
 		if strings.HasPrefix(input, "/plan") {
 			task := strings.TrimSpace(strings.TrimPrefix(input, "/plan"))
 			if task == "" {
-				fmt.Println("usage: /plan <task> — explores read-only, proposes a plan, executes on your approval")
+				core.EmitStatus("usage: /plan <task> — explores read-only, proposes a plan, executes on your approval")
 				continue
 			}
 			takeCheckpoint(root, "plan: "+task)
@@ -825,15 +825,15 @@ func Run(opts Options) int {
 			continue
 		}
 		if input == "/tools" {
-			fmt.Println("available tools:")
+			core.EmitStatus("available tools:")
 			for _, t := range registry {
-				fmt.Printf("  %-18s %s\n", t.Name, firstSentence(t.Desc))
+				core.EmitStatus(fmt.Sprintf("  %-18s %s", t.Name, firstSentence(t.Desc)))
 			}
 			continue
 		}
 		if input == "/context" {
-			fmt.Printf("context: ~%d tokens of a %d-token budget (%d messages)\n",
-				estimateTokens(messages), autoCompactTokens, len(messages))
+			core.EmitStatus(fmt.Sprintf("context: ~%d tokens of a %d-token budget (%d messages)",
+				estimateTokens(messages), autoCompactTokens, len(messages)))
 			continue
 		}
 		if input == "/diff" || strings.HasPrefix(input, "/diff ") {
@@ -846,49 +846,49 @@ func Run(opts Options) int {
 		}
 		if input == "/verify" {
 			if verifyCommand == "" {
-				fmt.Println(`no verify command configured — set "verify_command" in ~/.agent/config.json`)
+				core.EmitStatus(`no verify command configured — set "verify_command" in ~/.agent/config.json`)
 				continue
 			}
 			out, code, err := execShell(verifyCommand, root, true)
 			switch {
 			case err != nil:
-				fmt.Printf("verify error: %v\n%s\n", err, tail(out, 4096))
+				core.EmitError(fmt.Sprintf("verify error: %v\n%s", err, tail(out, 4096)))
 			case code == 0:
-				fmt.Println(tint(cGreen, "  ✓ verify passed"))
+				core.EmitStatus(tint(cGreen, "  ✓ verify passed"))
 			default:
-				fmt.Printf("%s\n%s\n", tint(cRed, fmt.Sprintf("  ✗ verify failed (exit %d)", code)), tail(out, 4096))
+				core.EmitError(fmt.Sprintf("%s\n%s", tint(cRed, fmt.Sprintf("  ✗ verify failed (exit %d)", code)), tail(out, 4096)))
 			}
 			continue
 		}
 		if input == "/model" || strings.HasPrefix(input, "/model ") {
 			arg := strings.TrimSpace(strings.TrimPrefix(input, "/model"))
 			if arg == "" {
-				fmt.Printf("current model: %s\n", model)
+				core.EmitStatus(fmt.Sprintf("current model: %s", model))
 				if avail, err := listModels(baseURL); err == nil {
-					fmt.Println("available:")
+					core.EmitStatus("available:")
 					for _, m := range avail {
 						marker := "  "
 						if m == model {
 							marker = "* "
 						}
-						fmt.Println(marker + m)
+						core.EmitStatus(marker + m)
 					}
 				}
 			} else {
 				model = arg
 				curModel = arg
-				fmt.Printf("switched to model: %s\n", model)
+				core.EmitStatus(fmt.Sprintf("switched to model: %s", model))
 			}
 			continue
 		}
 		if input == "/help" {
-			fmt.Println("commands: /plan <task> /init /verify /commit /rewind /stats /budget /models /effort /reload /fork /tree /ctx /compact /context /diff [path] /undo <path> /resume /sessions /tools /model [id] /allow [prefix] /copy /todos /agents /help")
-			fmt.Println("input: Tab completes /commands and paths · ↑/↓ history (persists across sessions) · !cmd runs shell directly, output joins context · @path attaches a file · paste multi-line directly · Ctrl+C clears (double = quit), Ctrl+D quits")
-			fmt.Println(`input: single line, or """ alone to open a multi-line block (""" again to send)`)
+			core.EmitStatus("commands: /plan <task> /init /verify /commit /rewind /stats /budget /models /effort /reload /fork /tree /ctx /compact /context /diff [path] /undo <path> /resume /sessions /tools /model [id] /allow [prefix] /copy /todos /agents /help")
+			core.EmitStatus("input: Tab completes /commands and paths · ↑/↓ history (persists across sessions) · !cmd runs shell directly, output joins context · @path attaches a file · paste multi-line directly · Ctrl+C clears (double = quit), Ctrl+D quits")
+			core.EmitStatus(`input: single line, or """ alone to open a multi-line block (""" again to send)`)
 			continue
 		}
 		if input == "/init" {
-			fmt.Println("(exploring the repository and generating AGENTS.md — this may take a while)")
+			core.EmitStatus("(exploring the repository and generating AGENTS.md — this may take a while)")
 			messages = append(messages, Message{Role: "user", Content: initPrompt})
 			messages = runTurn(baseURL, model, sb, st, messages)
 			st.Append(messages)
@@ -905,23 +905,23 @@ func Run(opts Options) int {
 		// Custom command templates run as a normal model turn with the
 		// expanded prompt (checkpoint, verify, notify all apply below).
 		if expanded, ok := expandCustomCommand(input); ok {
-			fmt.Println(tint(cDim, "  (expanded custom command)"))
+			core.EmitStatus(tint(cDim, "  (expanded custom command)"))
 			input = expanded
 		} else if strings.HasPrefix(input, "/") {
 			name, _, _ := strings.Cut(strings.TrimPrefix(input, "/"), " ")
 			if _, isCustom := customCommands[name]; isCustom {
-				fmt.Printf("/%s requires arguments — usage: /%s <args>\n", core.LogSafe(name), core.LogSafe(name))
+				core.EmitError(fmt.Sprintf("/%s requires arguments — usage: /%s <args>", core.LogSafe(name), core.LogSafe(name)))
 				continue
 			}
 			if !isBuiltinCommand(name) {
-				fmt.Printf("unknown command /%s — /help lists commands\n", core.LogSafe(name))
+				core.EmitError(fmt.Sprintf("unknown command /%s — /help lists commands", core.LogSafe(name)))
 				continue
 			}
 		}
 		modifiedBefore := len(sb.Modified)
 		expanded, attached := expandFileRefs(input, root)
 		if len(attached) > 0 {
-			fmt.Println(tint(cDim, "  (attached: "+strings.Join(attached, ", ")+")"))
+			core.EmitStatus(tint(cDim, "  (attached: "+strings.Join(attached, ", ")+")"))
 		}
 		takeCheckpoint(root, input)
 		turnStart := time.Now()
@@ -933,7 +933,7 @@ func Run(opts Options) int {
 			// resume. The turn's new messages are grafted back on at the
 			// end. Mid-turn autosave is off in this mode (wire ≠ canonical).
 			wire := distill(messages, sb)
-			fmt.Println(tint(cDim, fmt.Sprintf("  (context v2: sending ~%dk distilled from ~%dk)", estimateTokens(wire)/1000, estimateTokens(messages)/1000)))
+			core.EmitStatus(tint(cDim, fmt.Sprintf("  (context v2: sending ~%dk distilled from ~%dk)", estimateTokens(wire)/1000, estimateTokens(messages)/1000)))
 			base := len(wire)
 			out := runTurn(baseURL, model, sb, &SessionStore{}, wire)
 			out = runVerifyLoop(baseURL, model, sb, &SessionStore{}, out, modifiedBefore)
@@ -951,16 +951,16 @@ func Run(opts Options) int {
 		notifyTurnDone(time.Since(turnStart))
 		checkBudget()
 		if out, ok := runHook("post_turn", nil); !ok {
-			fmt.Println(tint(cYellow, "  (post_turn hook failed)\n"+tail(out, 1024)))
+			core.EmitStatus(tint(cYellow, "  (post_turn hook failed)\n"+tail(out, 1024)))
 		} else if strings.TrimSpace(out) != "" {
-			fmt.Println(tint(cDim, strings.TrimRight(out, "\n")))
+			core.EmitStatus(tint(cDim, strings.TrimRight(out, "\n")))
 		}
 
 		// Long-session safety: when the conversation grows past the soft
 		// budget, distill it before the next turn rather than letting it
 		// eventually exceed the model's context and fail abruptly.
 		if estimateTokens(messages) > autoCompactTokens {
-			fmt.Println(tint(cDim, fmt.Sprintf("  (context ~%d tokens — auto-compacting)", estimateTokens(messages))))
+			core.EmitStatus(tint(cDim, fmt.Sprintf("  (context ~%d tokens — auto-compacting)", estimateTokens(messages))))
 			messages = compact(baseURL, auxModelFor(), messages, st)
 			st.Append(messages)
 		}
@@ -968,9 +968,9 @@ func Run(opts Options) int {
 	sb.Summary()
 	if st.file != nil {
 		st.generateTitle(messages) // one-line title for /resume pick (best-effort)
-		fmt.Println("session saved:", st.Path(), "— resume with: -resume latest")
+		core.EmitStatus("session saved: " + st.Path() + " — resume with: -resume latest")
 		if t := sessionTitle(st.Path()); t != "" {
-			fmt.Printf("titled: %q\n", t)
+			core.EmitStatus(fmt.Sprintf("titled: %q", t))
 		}
 	}
 	return 0
@@ -1048,16 +1048,16 @@ func handleCopy(messages []Message) {
 		}
 	}
 	if last == "" {
-		fmt.Println("nothing to copy yet")
+		core.EmitStatus("nothing to copy yet")
 		return
 	}
 	cmd := exec.Command("clip.exe")
 	cmd.Stdin = strings.NewReader(last)
 	if err := cmd.Run(); err != nil {
-		fmt.Println("copy failed (clip.exe unavailable?):", err)
+		core.EmitError("copy failed (clip.exe unavailable?): " + err.Error())
 		return
 	}
-	fmt.Printf("copied last reply to the Windows clipboard (%d chars)\n", len(last))
+	core.EmitStatus(fmt.Sprintf("copied last reply to the Windows clipboard (%d chars)", len(last)))
 }
 
 // handleReload implements /reload: rebuild the agent from its own source
@@ -1067,25 +1067,25 @@ func handleCopy(messages []Message) {
 func handleReload(baseURL, model, root string) {
 	srcDir := agentSourceDir
 	if srcDir == "" {
-		fmt.Println("reload: agent source directory unknown (started outside `go run`?)")
+		core.EmitError("reload: agent source directory unknown (started outside `go run`?)")
 		return
 	}
-	fmt.Println(tint(cDim, "  (rebuilding agent from "+srcDir+")"))
+	core.EmitStatus(tint(cDim, "  (rebuilding agent from "+srcDir+")"))
 	out, code, err := execShell("go build -o /dev/null .", srcDir, false)
 	if err != nil || code != 0 {
-		fmt.Println("reload: build failed — staying on the current binary:")
-		fmt.Println(tail(out, 2048))
+		core.EmitError("reload: build failed — staying on the current binary:")
+		core.EmitError(tail(out, 2048))
 		return
 	}
 	goBin, err := exec.LookPath("go")
 	if err != nil {
-		fmt.Println("reload:", err)
+		core.EmitError("reload: " + err.Error())
 		return
 	}
 	args := []string{"go", "run", ".", "-url", baseURL, "-model", model, "-resume", "latest", root}
-	fmt.Println("reloading — resuming this session in the new build…")
+	core.EmitStatus("reloading — resuming this session in the new build…")
 	if err := execReplace(goBin, args, os.Environ()); err != nil {
-		fmt.Println("reload: exec failed:", err)
+		core.EmitError("reload: exec failed: " + err.Error())
 	}
 }
 
@@ -1133,9 +1133,9 @@ func listServerModels(baseURL, current string) {
 				if m.MaxCtx > 0 {
 					extra += fmt.Sprintf(" · %dk ctx", m.MaxCtx/1000)
 				}
-				fmt.Printf("%s%-45s %-11s %-6s %s\n", marker, m.ID, "["+state+"]", m.Type, extra)
+				core.EmitStatus(fmt.Sprintf("%s%-45s %-11s %-6s %s", marker, m.ID, "["+state+"]", m.Type, extra))
 			}
-			fmt.Println("switch with /model <id> — an unloaded model JIT-loads on its first request (slow first turn)")
+			core.EmitStatus("switch with /model <id> — an unloaded model JIT-loads on its first request (slow first turn)")
 			return
 		}
 		_ = resp.Body.Close()
@@ -1145,7 +1145,7 @@ func listServerModels(baseURL, current string) {
 	// Not LM Studio (or native API disabled): plain list, no state info.
 	models, err := listModels(baseURL)
 	if err != nil {
-		fmt.Println("models:", err)
+		core.EmitError("models: " + err.Error())
 		return
 	}
 	for _, m := range models {
@@ -1153,7 +1153,7 @@ func listServerModels(baseURL, current string) {
 		if m == current {
 			marker = "* "
 		}
-		fmt.Println(marker + m)
+		core.EmitStatus(marker + m)
 	}
 }
 
@@ -1165,7 +1165,7 @@ func handleDiff(sb *Sandbox, arg string) {
 	if arg != "" {
 		p, err := sb.resolve(arg)
 		if err != nil {
-			fmt.Println("diff:", err)
+			core.EmitError("diff: " + err.Error())
 			return
 		}
 		paths[p] = true
@@ -1174,19 +1174,19 @@ func handleDiff(sb *Sandbox, arg string) {
 			paths[p] = true
 		}
 		if len(paths) == 0 {
-			fmt.Println("nothing modified this session")
+			core.EmitStatus("nothing modified this session")
 			return
 		}
 	}
 	for p := range paths {
 		safeCur, err := core.ConfinePath(sb.Root, p)
 		if err != nil {
-			fmt.Printf("diff: %s: %v\n", core.LogSafe(p), err)
+			core.EmitError(fmt.Sprintf("diff: %s: %v", core.LogSafe(p), err))
 			continue
 		}
 		safeBak, err := core.ConfinePath(sb.Root, p+".bak")
 		if err != nil {
-			fmt.Printf("diff: %s.bak: %v\n", core.LogSafe(p), err)
+			core.EmitError(fmt.Sprintf("diff: %s.bak: %v", core.LogSafe(p), err))
 			continue
 		}
 		oldData, err := os.ReadFile(safeBak)
@@ -1196,16 +1196,16 @@ func handleDiff(sb *Sandbox, arg string) {
 		}
 		curData, err := os.ReadFile(safeCur)
 		if err != nil {
-			fmt.Printf("diff: %s: %v\n", core.LogSafe(p), err)
+			core.EmitError(fmt.Sprintf("diff: %s: %v", core.LogSafe(p), err))
 			continue
 		}
 		hunks := diffLines(string(oldData), string(curData))
 		if len(hunks) == 0 {
-			fmt.Printf("%s: no changes vs session start\n", core.LogSafe(p))
+			core.EmitStatus(fmt.Sprintf("%s: no changes vs session start", core.LogSafe(p)))
 			continue
 		}
-		fmt.Println(tint(cCyan, "  "+core.LogSafe(p)+" (vs pre-session .bak)"))
-		fmt.Print(renderDiff(hunks, useColor, 400))
+		core.EmitStatus(tint(cCyan, "  "+core.LogSafe(p)+" (vs pre-session .bak)"))
+		core.EmitDiff(renderDiff(hunks, useColor, 400))
 	}
 }
 
@@ -1214,34 +1214,34 @@ func handleDiff(sb *Sandbox, arg string) {
 func handleUndo(sb *Sandbox, arg string) {
 	if arg == "" {
 		if len(sb.Modified) == 0 {
-			fmt.Println("nothing modified this session")
+			core.EmitStatus("nothing modified this session")
 			return
 		}
-		fmt.Println("usage: /undo <path> — files modified this session:")
+		core.EmitStatus("usage: /undo <path> — files modified this session:")
 		seen := map[string]bool{}
 		for _, p := range sb.Modified {
 			if !seen[p] {
 				seen[p] = true
-				fmt.Println("  " + core.LogSafe(p))
+				core.EmitStatus("  " + core.LogSafe(p))
 			}
 		}
 		return
 	}
 	path, err := sb.resolve(arg)
 	if err != nil {
-		fmt.Println("undo:", err)
+		core.EmitError("undo: " + err.Error())
 		return
 	}
 	bak, err := os.ReadFile(path + ".bak")
 	if err != nil {
-		fmt.Printf("undo: no backup at %s.bak\n", core.LogSafe(path))
+		core.EmitError(fmt.Sprintf("undo: no backup at %s.bak", core.LogSafe(path)))
 		return
 	}
 	if err := writeAtomic(path, bak); err != nil {
-		fmt.Println("undo:", err)
+		core.EmitError("undo: " + err.Error())
 		return
 	}
-	fmt.Printf("restored %s from %s.bak (%d bytes)\n", core.LogSafe(path), core.LogSafe(path), len(bak))
+	core.EmitStatus(fmt.Sprintf("restored %s from %s.bak (%d bytes)", core.LogSafe(path), core.LogSafe(path), len(bak)))
 }
 
 // handleAllow implements /allow: with no argument it lists the effective
@@ -1249,30 +1249,30 @@ func handleUndo(sb *Sandbox, arg string) {
 // which takes effect on the very next command check.
 func handleAllow(arg string) {
 	if arg == "" {
-		fmt.Println("auto-approved (built-in prefixes):")
+		core.EmitStatus("auto-approved (built-in prefixes):")
 		for _, p := range autoApprovedPrefixes {
-			fmt.Println("  " + core.LogSafe(p))
+			core.EmitStatus("  " + core.LogSafe(p))
 		}
-		fmt.Println("auto-approved (built-in exact):")
+		core.EmitStatus("auto-approved (built-in exact):")
 		for _, e := range autoApprovedExact {
-			fmt.Println("  " + e)
+			core.EmitStatus("  " + e)
 		}
 		user := userAllowPrefixes()
 		if len(user) == 0 {
-			fmt.Printf("user prefixes: (none — add with /allow <prefix>, or edit %s)\n", allowFile())
+			core.EmitStatus(fmt.Sprintf("user prefixes: (none — add with /allow <prefix>, or edit %s)", allowFile()))
 			return
 		}
-		fmt.Printf("user prefixes (%s):\n", allowFile())
+		core.EmitStatus(fmt.Sprintf("user prefixes (%s):", allowFile()))
 		for _, p := range user {
-			fmt.Println("  " + core.LogSafe(p))
+			core.EmitStatus("  " + core.LogSafe(p))
 		}
 		return
 	}
 	if msg := appendAllow(arg); msg != "" {
-		fmt.Println("error:", msg)
+		core.EmitError("error: " + msg)
 		return
 	}
-	fmt.Printf("added to allowlist: %q (effective immediately; edit %s to remove)\n", core.LogSafe(arg), allowFile())
+	core.EmitStatus(fmt.Sprintf("added to allowlist: %q (effective immediately; edit %s to remove)", core.LogSafe(arg), allowFile()))
 }
 
 // tail returns the last n bytes of s (for showing the end of long output,
