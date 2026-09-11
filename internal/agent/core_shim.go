@@ -27,6 +27,7 @@ const (
 	EvToolDone  = core.EvToolDone
 	EvStats     = core.EvStats
 	EvApproval  = core.EvApproval
+	EvOverwrite = core.EvOverwrite
 )
 
 // --- the bus ---
@@ -44,6 +45,8 @@ var (
 	emitToolCall       = core.EmitToolCall
 	emitToolCallInline = core.EmitToolCallInline
 	emitStats          = core.EmitStats
+	emitOverwrite      = core.EmitOverwrite
+	emitClear          = core.EmitClear
 )
 
 // --- styling primitives (moved to core) ---

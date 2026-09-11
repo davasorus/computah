@@ -77,7 +77,7 @@ func (s *statsRecorder) record(promptTok, genTok, thinkTok int, ttfb, total time
 	s.lastPrompt, s.lastGen, s.lastThink, s.lastTTFB, s.lastGenDur = promptTok, genTok, thinkTok, ttfb, genDur
 }
 
-func (s *statsRecorder) print() { fmt.Print(s.render()) }
+func (s *statsRecorder) print() { emitLine(strings.TrimRight(s.render(), "\n")) }
 
 // render builds the stats report as a string (testable; used by /stats in
 // both the REPL and the TUI).

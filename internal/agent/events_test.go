@@ -181,6 +181,58 @@ func TestRunTurnEmitsBusyEvents(t *testing.T) {
 	}
 }
 
+// TestStdoutOverwriteTracksOpenState verifies the stdout subscriber's
+// in-place-line bookkeeping: an overwrite opens the line (owActive), a
+// second overwrite with the same key stays "open" (erase+reprint, not a new
+// line), and a clear closes it. This only exercises the state machine, not
+// actual terminal output (no TTY in tests).
+func TestStdoutOverwriteTracksOpenState(t *testing.T) {
+	s := &stdoutSubscriber{}
+	saved := useColor
+	useColor = true
+	defer func() { useColor = saved }()
+
+	s.OnEvent(Event{Kind: EvOverwrite, Key: "spinner", Text: "thinking…"})
+	if !s.owActive {
+		t.Fatal("an overwrite with text should mark the in-place line as open")
+	}
+	s.OnEvent(Event{Kind: EvOverwrite, Key: "spinner", Text: "thinking harder…"})
+	if !s.owActive {
+		t.Fatal("a repeat overwrite should keep the line open (erase+reprint)")
+	}
+	// Any other event first erases the open overwrite line.
+	s.OnEvent(Event{Kind: EvStatus, Text: "unrelated status"})
+	if s.owActive {
+		t.Fatal("a non-overwrite event should close/erase the open overwrite line")
+	}
+	// Re-open, then clear.
+	s.OnEvent(Event{Kind: EvOverwrite, Key: "spinner", Text: "again"})
+	s.OnEvent(Event{Kind: EvOverwrite, Key: "spinner", Meta: map[string]string{"clear": "1"}})
+	if s.owActive {
+		t.Fatal("a clear event should close the open overwrite line")
+	}
+}
+
+// TestStdoutOverwriteDegradesWithoutTTY verifies that when useColor is false
+// (piped/redirected output, no cursor control available) the subscriber
+// falls back to plain scrolling lines instead of silently dropping status,
+// and never tracks owActive (there's no in-place line to track).
+func TestStdoutOverwriteDegradesWithoutTTY(t *testing.T) {
+	s := &stdoutSubscriber{}
+	saved := useColor
+	useColor = false
+	defer func() { useColor = saved }()
+
+	s.OnEvent(Event{Kind: EvOverwrite, Key: "spinner", Text: "thinking…"})
+	if s.owActive {
+		t.Fatal("without a TTY there's no in-place line; owActive must stay false")
+	}
+	s.OnEvent(Event{Kind: EvOverwrite, Key: "spinner", Meta: map[string]string{"clear": "1"}})
+	if s.owActive {
+		t.Fatal("owActive must stay false after a clear too")
+	}
+}
+
 func TestEmitDiffMarksRaw(t *testing.T) {
 	var got Event
 	unsub := bus.Subscribe(SubscriberFunc(func(e Event) {

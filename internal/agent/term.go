@@ -463,15 +463,16 @@ func startSpinner(label string) *spinner {
 		for {
 			select {
 			case <-s.stop:
-				fmt.Print("\r\033[K") // erase the status line
+				emitClear("spinner") // erase the status line
 				close(s.done)
 				return
 			case <-t.C:
 				s.mu.Lock()
 				l := s.label
 				s.mu.Unlock()
-				fmt.Printf("\r\033[K\033[2m%c %s… (%ds)\033[0m",
-					frames[i%len(frames)], l, int(time.Since(start).Seconds()))
+				emitOverwrite("spinner",
+					fmt.Sprintf("%c %s… (%ds)", frames[i%len(frames)], l, int(time.Since(start).Seconds())),
+					cDim)
 				i++
 			}
 		}

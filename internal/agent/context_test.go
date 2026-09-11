@@ -81,6 +81,30 @@ func TestDistillInvariants(t *testing.T) {
 	}
 }
 
+func TestDistillRespectsConfigOverrides(t *testing.T) {
+	oldBudget, oldWindow := distillBudget, contextV2Window
+	defer func() { distillBudget, contextV2Window = oldBudget, oldWindow }()
+
+	// A tiny window/budget must trim the recent-dialogue window hard,
+	// proving these package vars (set from Config in main.go) are actually
+	// consulted rather than a hardcoded literal.
+	distillBudget = 50
+	contextV2Window = 2
+
+	sb := &Sandbox{Root: t.TempDir()}
+	wire := distill(mkConvo(), sb)
+
+	recent := 0
+	for _, m := range wire {
+		if m.Role == "user" || m.Role == "assistant" {
+			recent++
+		}
+	}
+	if recent > contextV2Window+2 { // +2 slack: goal line + state block aren't part of the trimmed window
+		t.Fatalf("distill did not respect overridden contextV2Window=%d: got %d dialogue messages", contextV2Window, recent)
+	}
+}
+
 func TestDistillShortSessionPassthrough(t *testing.T) {
 	msgs := []Message{{Role: "system", Content: "S"}, {Role: "user", Content: "hi"}}
 	wire := distill(msgs, &Sandbox{Root: t.TempDir()})

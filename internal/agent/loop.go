@@ -83,7 +83,7 @@ func interruptibleChat(baseURL, model string, messages []Message, onToken func(s
 // streamChat wraps interruptibleChat with the spinner: an animated status
 // line runs until the first token (or the tool calls) arrive, then vanishes.
 func streamChat(baseURL, model string, messages []Message) (Message, bool, error) {
-	const maxAttempts = 2
+	maxAttempts := chatRetryAttempts
 	var reply Message
 	var intr bool
 	var err error
@@ -108,12 +108,21 @@ func streamChat(baseURL, model string, messages []Message) (Message, bool, error
 		onToolProgress, onReasoning = nil, nil
 		sp.Stop()
 		mdw.Flush()
-		// Retry only when: it failed, wasn't a user interrupt, and nothing
-		// was printed yet (retrying after partial output would duplicate it).
-		if err != nil && !intr && !streamed && attempt < maxAttempts {
-			emitLineC(cDim, fmt.Sprintf("  (request failed: %v — retrying once)", err))
-			time.Sleep(time.Second)
-			continue
+		// Retry only when: it failed, wasn't a user interrupt, nothing was
+		// printed yet (retrying after partial output would duplicate it),
+		// and the failure is classified as worth retrying — a fatal error
+		// (bad model, malformed request, HTTP 4xx) surfaces immediately
+		// instead of waiting out a pointless 1-second sleep first.
+		if err != nil && !intr && !streamed {
+			if !retryable(err) {
+				core.EmitError(fmt.Sprintf("  (request failed, not retrying: %v)", err))
+				break
+			}
+			if attempt < maxAttempts {
+				core.EmitStatus(fmt.Sprintf("  (request failed: %v — retrying once)", err))
+				time.Sleep(time.Second)
+				continue
+			}
 		}
 		break
 	}
@@ -153,27 +162,16 @@ func RunTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Me
 		// work or wandering — the anchor tells the model which, because the
 		// original instruction has long since scrolled out of attention.
 		if iters == 15 || iters == 28 {
-			note := "[Progress check — this turn has used " + fmt.Sprint(iters) + " tool calls. The task is: " + anchor +
-				" — If you are advancing it, continue. If you are exploring without progress, state your conclusion or blocker to the user instead of continuing.]"
-			if len(todos) > 0 {
-				done := 0
-				for _, td := range todos {
-					if td.Done {
-						done++
-					}
-				}
-				note += fmt.Sprintf(" [Checklist: %d/%d done — update it if that's stale.]", done, len(todos))
-			}
-			messages = append(messages, Message{Role: "user", Content: note})
-			emitLineC(cDim, fmt.Sprintf("  (progress check injected at %d calls)", iters))
+			messages = append(messages, Message{Role: "user", Content: promptProgressCheck(iters, anchor, todos)})
+			core.EmitStatus(fmt.Sprintf("  (progress check injected at %d calls)", iters))
 		}
 		// Hard budget: past this, the turn ends with an accounting rather
 		// than wandering forever. Config "max_turn_iters"; generous default
 		// because legitimate big refactors are long — this is a circuit
 		// breaker, not a leash.
 		if iters > maxTurnIters {
-			emitLineC(cRed, fmt.Sprintf("  (turn budget: %d tool calls — stopping)", maxTurnIters))
-			messages = append(messages, Message{Role: "user", Content: "[Turn budget reached. Stop calling tools. Summarize what you accomplished, what remains, and what you recommend next.]"})
+			core.EmitError(fmt.Sprintf("  (turn budget: %d tool calls — stopping)", maxTurnIters))
+			messages = append(messages, Message{Role: "user", Content: promptTurnBudgetReached()})
 			if final, intr, err := streamChat(baseURL, model, messages); err == nil && !intr {
 				messages = append(messages, final)
 				fmt.Println()
@@ -198,21 +196,20 @@ func RunTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Me
 			// it preserved (plus the task anchor in the marker), a bare
 			// "continue" or a one-line correction resumes from where the
 			// model actually was.
-			fmt.Println("\n(turn interrupted — back to you)")
+			core.EmitStatus("\n(turn interrupted — back to you)")
 			if strings.TrimSpace(reply.Content) != "" {
 				reply.ToolCalls = nil
 				reply.Content += "\n[reply cut off here by the user's interrupt]"
 				messages = append(messages, reply)
 			}
 			messages = append(messages, Message{
-				Role: "user",
-				Content: "[The user interrupted this turn. The task was: " + anchor +
-					" — wait for their next instruction and follow it directly; do not restart deliberation from scratch.]",
+				Role:    "user",
+				Content: promptTurnInterrupted(anchor),
 			})
 			return messages
 		}
 		if err != nil {
-			fmt.Println("error:", err)
+			core.EmitError(fmt.Sprintf("error: %v", err))
 			return messages
 		}
 		messages = append(messages, reply)
@@ -243,9 +240,7 @@ func RunTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Me
 						messages = append(messages, Message{
 							Role:       "tool",
 							ToolCallID: reply.ToolCalls[0].ID,
-							Content: "[Not executed: this is byte-identical to the call that just failed, so it would fail the same way. " +
-								"Do something DIFFERENT: re-read the file and copy its exact bytes into old_str, rewrite the file with write_file, " +
-								"or take another approach. Do not submit this call again.]",
+							Content:    promptIdenticalFailedCallRedirect(),
 						})
 						continue
 					}
@@ -253,7 +248,7 @@ func RunTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Me
 					messages = append(messages, Message{
 						Role:       "tool",
 						ToolCallID: reply.ToolCalls[0].ID,
-						Content:    "[Not executed: repeated failing call. Stop calling tools. Briefly explain to the user what you were trying to do and what you need from them.]",
+						Content:    promptIdenticalFailedCallStop(),
 					})
 					if final, intr, err := streamChat(baseURL, model, messages); err == nil && !intr {
 						messages = append(messages, final)
@@ -275,8 +270,7 @@ func RunTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Me
 					messages = append(messages, Message{
 						Role:       "tool",
 						ToolCallID: reply.ToolCalls[0].ID,
-						Content: "[Not executed: this call is byte-identical to your previous one and nothing has changed — " +
-							"its result is already in the conversation above. Use that result, or take a different action.]",
+						Content:    promptIdenticalSuccessRefusal(),
 					})
 					continue
 				}
@@ -335,10 +329,10 @@ func RunTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Me
 			// explain itself, and hand control back to the user.
 			sig := call.Function.Name + call.Function.Arguments
 			if sig == lastCall {
-				fmt.Print("\n(stopped: model repeated the same failed tool call)\n")
+				emitLineC(cRed, "\n(stopped: model repeated the same failed tool call)\n")
 				messages = append(messages, Message{
 					Role:    "user",
-					Content: "[You repeated the same failed call. Stop calling tools. Explain briefly to the user what you were trying to do and what you need from them.]",
+					Content: promptInlineRepeatedCallStop(),
 				})
 				if final, intr, err := streamChat(baseURL, model, messages); err == nil && !intr {
 					messages = append(messages, final)
@@ -356,16 +350,12 @@ func RunTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Me
 			result := sb.Execute(call.Function.Name, args)
 			lastErr = strings.HasPrefix(result, "ERROR")
 
-			note := ""
-			if len(inline) > 1 {
-				note = "\n\n[Note: your other tool calls were ignored. Make ONE tool call, wait for its result, then continue.]"
-			}
 			// No real tool_call_id exists on the assistant message, so feed
 			// the result back as a user message; a role=tool message without
 			// a matching id can be rejected or mangled by the template.
 			messages = append(messages, Message{
 				Role:    "user",
-				Content: fmt.Sprintf("[tool result for %s]\n%s%s", call.Function.Name, result, note),
+				Content: promptInlineToolResult(call.Function.Name, result, len(inline) > 1),
 			})
 			continue
 		}
@@ -377,13 +367,12 @@ func RunTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Me
 		// edits.) Ending the turn there wastes everything the model just
 		// worked out; a direct order to act usually converts it. Bounded at
 		// two nudges — past that the model is stuck and the user should see.
-		if lastFinishReason == "length" && capNudges < 2 {
+		if lastFinishReason == "length" && capNudges < capNudgeLimit {
 			capNudges++
 			emitLineC(cYellow, "  (cap reached mid-deliberation with no action — nudging the model to act)")
 			messages = append(messages, Message{
-				Role: "user",
-				Content: "[Your reply was truncated at the generation cap and contained no tool call — analysis only. " +
-					"Do NOT resume the analysis. State your decision in one sentence, then immediately make the next tool call.]",
+				Role:    "user",
+				Content: promptCapStallNudge(),
 			})
 			continue
 		}
@@ -395,6 +384,14 @@ func RunTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Me
 
 // maxTurnIters is the hard per-turn tool-call budget (config "max_turn_iters").
 var maxTurnIters = 40
+
+// chatRetryAttempts is how many times streamChat retries a transient
+// failure before giving up (config "chat_retry_attempts").
+var chatRetryAttempts = 2
+
+// capNudgeLimit is the max number of per-turn act-now nudges issued after
+// cap-truncated deliberation (config "cap_nudge_limit").
+var capNudgeLimit = 2
 
 // sigCount counts occurrences of sig in the window.
 func sigCount(window []string, sig string) int {
@@ -473,10 +470,8 @@ func currentTools() []map[string]any {
 func runPlanTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Message, task string) []Message {
 	planMode = true
 	messages = append(messages, Message{
-		Role: "user",
-		Content: "PLAN MODE (read-only): " + task + "\n\n" +
-			"Explore whatever you need with the read-only tools, then produce a concise numbered implementation plan: " +
-			"which files change and how, in what order, and how the result gets verified. Do not modify anything yet.",
+		Role:    "user",
+		Content: promptPlanModeTask(task),
 	})
 	messages = runTurn(baseURL, model, sb, st, messages)
 	planMode = false
@@ -487,7 +482,7 @@ func runPlanTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages 
 	}
 	switch strings.ToLower(ans) {
 	case "y", "yes":
-		messages = append(messages, Message{Role: "user", Content: "Approved. Execute the plan above."})
+		messages = append(messages, Message{Role: "user", Content: promptPlanApproved()})
 		return runTurn(baseURL, model, sb, st, messages)
 	case "edit":
 		note, nok := askLine("what should change about the plan? ")
@@ -496,7 +491,7 @@ func runPlanTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages 
 		}
 		return runPlanTurn(baseURL, model, sb, st, messages, "Revise the previous plan: "+note)
 	default:
-		fmt.Println("(plan kept in context, nothing executed — refine it or /plan again)")
+		emitLine("(plan kept in context, nothing executed — refine it or /plan again)")
 		return messages
 	}
 }
@@ -511,7 +506,6 @@ func runPlanTurn(baseURL, model string, sb *Sandbox, st *SessionStore, messages 
 // If a fix attempt modifies nothing, retrying is pointless and control
 // returns to the user immediately.
 func RunVerifyLoop(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Message, modifiedBefore int) []Message {
-	const maxFixAttempts = 2
 	if verifyCommand == "" || len(sb.Modified) == modifiedBefore {
 		return messages
 	}
@@ -534,13 +528,12 @@ func RunVerifyLoop(baseURL, model string, sb *Sandbox, st *SessionStore, message
 		// Parsed failures give the model a target (failing tests +
 		// file:line assertions, or the compiler error lines) instead of a
 		// wall of output; the raw tail follows as backup.
-		feedback := fmt.Sprintf("[verify] `%s` failed (%s).", verifyCommand, detail)
-		if parsed := core.ParseTestFailures(out); parsed != "" {
-			feedback += "\n" + parsed + "\nFull output tail:\n" + tail(out, 2048)
-		} else {
-			feedback += " Output tail:\n" + tail(out, 4096)
+		parsed := core.ParseTestFailures(out)
+		outputTail := tail(out, 4096)
+		if parsed != "" {
+			outputTail = tail(out, 2048)
 		}
-		feedback += "\n\nFix the underlying problem. Never weaken, skip, or delete tests to make verification pass."
+		feedback := promptVerifyFeedback(verifyCommand, detail, parsed, outputTail)
 		messages = append(messages, Message{Role: "user", Content: feedback})
 		before := len(sb.Modified)
 		messages = runTurn(baseURL, model, sb, st, messages)
@@ -553,6 +546,12 @@ func RunVerifyLoop(baseURL, model string, sb *Sandbox, st *SessionStore, message
 }
 
 // ---------- Subtasks ----------
+
+// maxFixAttempts caps verify-loop fix retries (config "max_fix_attempts").
+var maxFixAttempts = 2
+
+// subtaskMaxDepth caps subtask nesting (config "subtask_max_depth").
+var subtaskMaxDepth = 1
 
 // spawnDepth guards against subtasks spawning subtasks: one level is
 // decomposition, two is the model disappearing up its own recursion.
@@ -569,16 +568,14 @@ func toolSpawnTask(s *Sandbox, a toolArgs) string {
 	if task == "" {
 		return "ERROR: task must describe the subtask to perform"
 	}
-	if spawnDepth >= 1 {
+	if spawnDepth >= subtaskMaxDepth {
 		return "ERROR: subtasks cannot spawn further subtasks — do this work directly"
 	}
 	spawnDepth++
 	defer func() { spawnDepth-- }()
 
 	subModel := curModel
-	rolePrompt := "\n\nYou are handling a DELEGATED SUBTASK from a parent agent. Complete only this task. " +
-		"When done, reply with a concise result summary: what you did, files changed, and anything the parent needs to know. " +
-		"The parent sees only your final summary, not your tool calls."
+	rolePrompt := promptSubtaskRole()
 	label := "subtask"
 	if roleName := strings.TrimSpace(a.str("role")); roleName != "" {
 		role, ok := agentRoles[roleName]

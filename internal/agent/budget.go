@@ -5,7 +5,7 @@
 // minutes and a novel's worth of generated tokens before you notice. On a
 // local box the cost isn't dollars, it's your afternoon and your GPU — so
 // the budget is a WARNING, never a hard stop. Aborting a session mid-thought
-// to enforce a ceiling would be worse than the overrun.
+// to even enforce a ceiling would be worse than the overrun.
 //
 // Config: "budget_minutes" and/or "budget_ktokens" (thousands of generated
 // + reasoning tokens — reasoning counts because on a reasoning model it's
@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/davasorus/computah/internal/core"
 )
 
 var (
@@ -76,7 +78,7 @@ func checkBudget() {
 }
 
 // printBudget implements /budget.
-func printBudget() { fmt.Print(renderBudget()) }
+func printBudget() { core.EmitLine(renderBudget()) }
 
 func renderBudget() string {
 	var b strings.Builder

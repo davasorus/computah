@@ -23,7 +23,9 @@ import (
 // -resume loads the tail of the latest session for this directory;
 // /compact distills the session into a summary and starts a fresh file.
 
-const resumeTail = 30 // messages restored by -resume (full transcript stays on disk)
+// resumeTail is how many messages -resume restores (full transcript stays
+// on disk); config "resume_tail".
+var resumeTail = 30
 
 // autoCompactTokens is the soft context budget. When the running estimate
 // crosses it, the session auto-compacts before the next turn. Set well below
@@ -118,12 +120,12 @@ func manageContext(messages []Message) []Message {
 	messages = shrinkOldToolResults(messages)
 	after := estimateTokens(messages)
 	if after < before {
-		fmt.Println(tint(cDim, fmt.Sprintf(
+		emitLineC(cDim, fmt.Sprintf(
 			"  (context ~%dk tokens — pruned %d stale read(s), elided older tool outputs → ~%dk; note: the next request reprocesses the prompt)",
-			before/1000, pruned, after/1000)))
+			before/1000, pruned, after/1000))
 	}
 	if after > autoCompactTokens {
-		fmt.Println(tint(cYellow, "  (context still over budget after eliding — /compact when this turn finishes, or raise compact_tokens)"))
+		emitLineC(cYellow, "  (context still over budget after eliding — /compact when this turn finishes, or raise compact_tokens)")
 	}
 	return messages
 }
@@ -358,7 +360,7 @@ func (st *SessionStore) generateTitle(messages []Message) {
 		userMsgs = userMsgs[:8]
 	}
 	req := []Message{
-		{Role: "system", Content: "Summarize what this coding session was about in ONE line, at most 8 words, no punctuation at the end, no quotes. Respond with the title only."},
+		{Role: "system", Content: promptTitleSystem()},
 		{Role: "user", Content: strings.Join(userMsgs, "\n---\n")},
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -414,7 +416,7 @@ func (st *SessionStore) sessionParent(name string) string {
 func (st *SessionStore) printSessionTree() {
 	names := st.sessionNames()
 	if len(names) == 0 {
-		fmt.Println("no sessions for this directory")
+		emitLine("no sessions for this directory")
 		return
 	}
 	parent := map[string]string{}
@@ -439,7 +441,7 @@ func (st *SessionStore) printSessionTree() {
 		if t := sessionTitle(filepath.Join(st.dir, name)); t != "" {
 			label += "  " + tint(cDim, "“"+t+"”")
 		}
-		fmt.Println(indent + label)
+		emitLine(indent + label)
 		kids := children[name]
 		sort.Strings(kids)
 		for _, k := range kids {
@@ -473,15 +475,15 @@ func (st *SessionStore) sessionNames() []string {
 
 func (st *SessionStore) listSessions() {
 	if st.dir == "" {
-		fmt.Println("session persistence unavailable")
+		emitLine("session persistence unavailable")
 		return
 	}
 	names := st.sessionNames()
 	if len(names) == 0 {
-		fmt.Println("no sessions saved for this directory yet")
+		emitLine("no sessions saved for this directory yet")
 		return
 	}
-	fmt.Printf("sessions for this directory (%s):\n", st.dir)
+	emitLine(fmt.Sprintf("sessions for this directory (%s):", st.dir))
 	for i, name := range names {
 		msgs, _ := loadSession(filepath.Join(st.dir, name), 1<<30)
 		preview := "(empty)"
@@ -502,9 +504,9 @@ func (st *SessionStore) listSessions() {
 		if t := sessionTitle(filepath.Join(st.dir, name)); t != "" {
 			label = t // model-written title beats a raw prompt excerpt
 		}
-		fmt.Printf("  %2d) %-24s %3d msgs  %q%s\n", i+1, strings.TrimSuffix(name, ".jsonl"), len(msgs), label, marker)
+		emitLine(fmt.Sprintf("  %2d) %-24s %3d msgs  %q%s", i+1, strings.TrimSuffix(name, ".jsonl"), len(msgs), label, marker))
 	}
-	fmt.Println("resume with: -resume latest, -resume <name>, -resume pick, or /resume in-session")
+	emitLine("resume with: -resume latest, -resume <name>, -resume pick, or /resume in-session")
 }
 
 // pickSession lists sessions numbered and asks which to load. Returns the
@@ -554,31 +556,29 @@ func (st *SessionStore) resolveSession(arg string) (string, error) {
 // reprocesses from scratch, which is the one-time price of a small context.
 func Compact(baseURL, model string, messages []Message, st *SessionStore) []Message {
 	if len(messages) <= 1 {
-		fmt.Println("(nothing to compact yet)")
+		emitLine("(nothing to compact yet)")
 		return messages
 	}
 	messages = append(messages, Message{
-		Role: "user",
-		Content: "Summarize this session for future context: key decisions, files changed and why, " +
-			"and any unresolved threads. Be concise (under 300 words). Output only the summary.",
+		Role:    "user",
+		Content: promptCompactRequest(),
 	})
 	reply, intr, err := streamChat(baseURL, model, messages)
 	if intr {
-		fmt.Println("\n(compact interrupted — session unchanged)")
+		emitLine("\n(compact interrupted — session unchanged)")
 		return messages[:len(messages)-1] // drop the summary request
 	}
 	if err != nil {
-		fmt.Println("compact failed:", err)
+		emitLine(fmt.Sprintf("compact failed: %v", err))
 		return messages[:len(messages)-1] // drop the summary request, keep the session
 	}
-	fmt.Println()
 	fresh := []Message{
 		messages[0], // the system prompt
-		{Role: "user", Content: "Context carried over from a previous session (compacted summary):\n" + reply.Content},
+		{Role: "user", Content: promptCompactCarryOver(reply.Content)},
 		{Role: "assistant", Content: "Understood — continuing from that context."},
 	}
 	st.Rotate()
 	st.Append(fresh)
-	fmt.Println("(session compacted — context reset to the summary; full transcript kept on disk)")
+	emitLine("(session compacted — context reset to the summary; full transcript kept on disk)")
 	return fresh
 }

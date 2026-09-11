@@ -37,8 +37,13 @@ import (
 // contextV2 toggles distilled wire context (config "context_v2", /ctx).
 var contextV2 bool
 
-// distillBudget caps the recent-dialogue window's estimated tokens.
-const distillBudget = 6000
+// distillBudget caps the recent-dialogue window's estimated tokens
+// (config "context_v2_budget").
+var distillBudget = 6000
+
+// contextV2Window caps the number of recent-dialogue messages kept
+// (config "context_v2_window").
+var contextV2Window = 12
 
 // distill builds the v2 wire context from the canonical transcript.
 // messages[0] must be the system prompt; the last message must be the new
@@ -50,32 +55,7 @@ func distill(messages []Message, sb *Sandbox) []Message {
 	wire := []Message{messages[0]}
 
 	// Session state block: the ground truth that must never scroll away.
-	var state strings.Builder
-	state.WriteString("[Session state]\n")
-	if len(sb.Modified) > 0 {
-		seen := map[string]bool{}
-		state.WriteString("Files modified this session: ")
-		var uniq []string
-		for _, p := range sb.Modified {
-			if !seen[p] {
-				seen[p] = true
-				uniq = append(uniq, p)
-			}
-		}
-		state.WriteString(strings.Join(uniq, ", ") + "\n")
-	}
-	if len(todos) > 0 {
-		state.WriteString("Checklist:\n")
-		for _, td := range todos {
-			box := "[ ]"
-			if td.Done {
-				box = "[x]"
-			}
-			state.WriteString("  " + box + " " + td.Text + "\n")
-		}
-	}
-	state.WriteString("Earlier tool outputs were elided from this context to keep it small — re-read files or re-run read-only commands when you need their current content.")
-	wire = append(wire, Message{Role: "user", Content: state.String()})
+	wire = append(wire, Message{Role: "user", Content: promptSessionState(sb.Modified, todos)})
 
 	// Dialogue window: user messages and FINAL assistant replies only.
 	// No tool results, no tool-calling assistant messages — by construction
@@ -98,11 +78,11 @@ func distill(messages []Message, sb *Sandbox) []Message {
 	// it — small models drift without it (same reasoning as the turn anchor).
 	goal := dialogue[0]
 	window := dialogue
-	for len(window) > 12 || (len(window) > 1 && estimateTokens(window) > distillBudget) {
+	for len(window) > contextV2Window || (len(window) > 1 && estimateTokens(window) > distillBudget) {
 		window = window[1:]
 	}
 	if window[0].Content != goal.Content {
-		wire = append(wire, Message{Role: "user", Content: "[Session goal, from the start of this session] " + clip(goal.Content, 400)})
+		wire = append(wire, Message{Role: "user", Content: promptSessionGoalPrefix + clip(goal.Content, 400)})
 	}
 	return append(wire, window...)
 }
