@@ -8,11 +8,16 @@
 # dataflow can't infer this, so we model it explicitly. See internal/core/pathsafe.go.
 #
 # LogSafe strips CR/LF and other C0 controls (plus DEL) from a value before it
-# is written to a log/terminal line, which is exactly what the go/log-injection
-# query's own ReplaceSanitizer pattern recognizes for strings.ReplaceAll — but
-# LogSafe uses strings.Map, which that built-in pattern doesn't match. Model
-# LogSafe's return value as a log-injection sanitizer explicitly so already-
-# wrapped call sites aren't flagged. See internal/core/logsafe.go.
+# is written to a log/terminal line. As of the fix for the 3 go/log-injection
+# alerts that persisted despite LogSafe being applied everywhere, LogSafe's
+# CR/LF removal is implemented via strings.ReplaceAll (not strings.Map), which
+# IS the built-in ReplaceSanitizer pattern the go/log-injection query already
+# recognizes — so CodeQL confirms sanitization natively and this barrier-model
+# row is no longer load-bearing for that query. It (and the row below) also
+# can't take effect via this file anyway: Go is not yet in the set of
+# languages CodeQL model packs officially support. The row is kept as a
+# forward-compatible fallback should either fact change. See
+# internal/core/logsafe.go.
 extensions:
   - addsTo:
       pack: codeql/go-all
