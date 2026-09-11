@@ -104,9 +104,10 @@ func (s *stdoutSubscriber) OnEvent(e Event) {
 // it degrades to plain scrolling lines rather than silently dropping the
 // status entirely.
 func (s *stdoutSubscriber) onOverwrite(e Event) {
+	safeText := core.LogSafe(e.Text)
 	if !useColor {
-		if e.Meta["clear"] != "1" && e.Text != "" {
-			fmt.Println(e.Text)
+		if e.Meta["clear"] != "1" && safeText != "" {
+			fmt.Println(safeText)
 		}
 		return
 	}
@@ -116,7 +117,7 @@ func (s *stdoutSubscriber) onOverwrite(e Event) {
 	if e.Meta["clear"] == "1" {
 		return
 	}
-	line := e.Text
+	line := safeText
 	if e.Color != "" {
 		line = tint(e.Color, line)
 	}
