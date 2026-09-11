@@ -1,10 +1,18 @@
 name: prepare-release
 
-# Run manually (Actions tab -> prepare-release -> Run workflow) with the
-# version to release (no leading v, e.g. 0.2.0). It validates the version,
-# checks the tag doesn't already exist, then creates and pushes the tag on the
-# current tip of `live`. The tag push triggers the existing `release` workflow
-# (GoReleaser).
+# Run manually (Actions tab -> prepare-release -> Run workflow) to cut a
+# release. By default the next version is computed automatically from
+# Conventional Commits on `live` since the last tag, using svu
+# (github.com/caarlos0/svu): feat -> minor, fix -> patch, "!"/BREAKING CHANGE
+# -> major, anything else -> no bump. Leave the `version` input blank for
+# this automatic mode, or set it (no leading v, e.g. 0.2.0) to override.
+#
+# The workflow validates the version, checks the tag doesn't already exist,
+# then creates and pushes the tag on the current tip of `live`. The tag push
+# triggers the existing `release` workflow (GoReleaser), which also derives
+# its changelog from the same Conventional Commits history — so version and
+# changelog stay driven by one source of truth (commit messages) instead of
+# a second semantic-release tool.
 #
 # Unlike engram's prepare-release, there is NO version-file bump step:
 # computah's version comes entirely from the git tag (GoReleaser injects it via
@@ -19,8 +27,8 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release, no leading v (e.g. 0.2.0)"
-        required: true
+        description: "Version override, no leading v (e.g. 0.2.0). Leave blank to auto-compute from Conventional Commits."
+        required: false
 
 permissions:
   contents: write
@@ -35,22 +43,39 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.RELEASE_PAT }}
 
-      - name: validate version
+      - uses: actions/setup-go@v7
+        if: ${{ inputs.version == '' }}
+        with:
+          go-version: "1.25"
+          cache: true
+
+      - name: install svu
+        if: ${{ inputs.version == '' }}
+        run: go install github.com/caarlos0/svu/v3@latest
+
+      - name: compute next version
+        id: next
         run: |
           set -euo pipefail
-          v="${{ inputs.version }}"
-          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "not semver: $v" >&2; exit 1; }
-          tag="v${v}"
+          if [[ -n "${{ inputs.version }}" ]]; then
+            v="${{ inputs.version }}"
+            [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "not semver: $v" >&2; exit 1; }
+            tag="v${v}"
+          else
+            tag="$(svu next)"
+          fi
           if git rev-parse "$tag" >/dev/null 2>&1; then
             echo "tag $tag already exists" >&2
             exit 1
           fi
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
 
       - name: create and push tag
         run: |
           set -euo pipefail
-          tag="v${{ inputs.version }}"
+          tag="${{ steps.next.outputs.tag }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "$tag" -m "Release ${tag}"
           git push origin "$tag"
+          echo "### Released ${tag}" >> "$GITHUB_STEP_SUMMARY"
