@@ -70,29 +70,29 @@ func (s *stdoutSubscriber) OnEvent(e Event) {
 			suffix = " [inline]"
 		}
 		st := core.StyleFor(EvToolCall)
-		s.println(tint(cDim, st.Pad()+st.Glyph+" "+e.Tool+"("+e.Text+")"+suffix))
+		s.println(tint(cDim, st.Pad()+st.Glyph+" "+core.LogSafe(e.Tool)+"("+core.LogSafe(e.Text)+")"+suffix))
 	case EvToolDone:
 		if e.Text != "" {
 			st := core.StyleFor(EvToolDone)
-			s.println(tint(cDim, st.Pad()+st.Glyph+" "+e.Text))
+			s.println(tint(cDim, st.Pad()+st.Glyph+" "+core.LogSafe(e.Text)))
 		}
 	case EvError:
-		s.println(tint(core.ANSIForRole(core.RoleError), e.Text))
+		s.println(tint(core.ANSIForRole(core.RoleError), core.LogSafe(e.Text)))
 	case EvStatus:
-		s.println(e.Text)
+		s.println(core.LogSafe(e.Text))
 	case EvThinking:
 		// Thinking progress is handled by the live spinner today; the bus
 		// event exists for the TUI/dashboard. stdout stays quiet to avoid
 		// double-rendering against the spinner.
 	case EvStats:
-		s.println(tint(core.ANSIForRole(core.RoleDim), e.Text))
+		s.println(tint(core.ANSIForRole(core.RoleDim), core.LogSafe(e.Text)))
 	case EvLine:
 		if e.Meta["raw"] == "1" {
-			s.println(e.Text) // pre-formatted (diff) — print verbatim
+			s.println(e.Text) // pre-formatted (diff) — print verbatim, not user input
 		} else if e.Color != "" {
-			s.println(tint(e.Color, e.Text))
+			s.println(tint(e.Color, core.LogSafe(e.Text)))
 		} else {
-			s.println(e.Text)
+			s.println(core.LogSafe(e.Text))
 		}
 	case EvUser:
 		// The user already sees what they typed; no echo needed on stdout.

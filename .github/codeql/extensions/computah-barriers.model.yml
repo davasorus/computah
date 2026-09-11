@@ -6,6 +6,13 @@
 # (rejecting absolute escapes, "..", and sibling-prefix tricks). Its return
 # value is therefore safe to pass to a filesystem sink. CodeQL's built-in
 # dataflow can't infer this, so we model it explicitly. See internal/core/pathsafe.go.
+#
+# LogSafe strips CR/LF and other C0 controls (plus DEL) from a value before it
+# is written to a log/terminal line, which is exactly what the go/log-injection
+# query's own ReplaceSanitizer pattern recognizes for strings.ReplaceAll — but
+# LogSafe uses strings.Map, which that built-in pattern doesn't match. Model
+# LogSafe's return value as a log-injection sanitizer explicitly so already-
+# wrapped call sites aren't flagged. See internal/core/logsafe.go.
 extensions:
   - addsTo:
       pack: codeql/go-all
@@ -13,3 +20,4 @@ extensions:
     data:
       # package, type(blank=free func), subtypes, name, signature, ext, output, kind, provenance
       - ["github.com/davasorus/computah/internal/core", "", false, "ConfinePath", "", "", "ReturnValue[0]", "path-injection", "manual"]
+      - ["github.com/davasorus/computah/internal/core", "", false, "LogSafe", "", "", "ReturnValue[0]", "log-injection", "manual"]

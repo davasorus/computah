@@ -117,7 +117,7 @@ func runEval(root, path string, runs int) int {
 	assumeYes = true
 	statsTrace = true // per-request timing lines: the KV-cache diagnostic
 
-	core.EmitStatus(fmt.Sprintf("eval: %d case(s) × %d run(s) — model=%s workDirc=%s\n", len(cases), runs, curModel, root))
+	core.EmitStatus(fmt.Sprintf("eval: %d case(s) × %d run(s) — model=%s workDirc=%s\n", len(cases), runs, core.LogSafe(curModel), core.LogSafe(root)))
 	type result struct {
 		name   string
 		passes int

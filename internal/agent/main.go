@@ -632,9 +632,9 @@ func Run(opts Options) int {
 			path, err = st.resolveSession(*resumeFlag)
 		}
 		if err != nil {
-			core.EmitError("resume: " + err.Error())
+			core.EmitError("resume: " + core.LogSafe(err.Error()))
 		} else if hist, herr := loadSession(path, resumeTail); herr != nil {
-			core.EmitError("resume: " + herr.Error())
+			core.EmitError("resume: " + core.LogSafe(herr.Error()))
 		} else {
 			messages = append(messages, hist...)
 			core.EmitStatus(fmt.Sprintf("resumed %d messages from %s", len(hist), filepath.Base(path)))
@@ -705,7 +705,7 @@ func Run(opts Options) int {
 			out, code, err := execShell(cmdStr, root, true)
 			detail := fmt.Sprintf("exit %d", code)
 			if err != nil {
-				detail = err.Error()
+				detail = core.LogSafe(err.Error())
 			}
 			messages = append(messages, Message{
 				Role:    "user",
@@ -730,9 +730,9 @@ func Run(opts Options) int {
 		}
 		if input == "/resume" {
 			if path, err := st.pickSession(); err != nil {
-				core.EmitError("resume: " + err.Error())
+				core.EmitError("resume: " + core.LogSafe(err.Error()))
 			} else if hist, herr := loadSession(path, resumeTail); herr != nil {
-				core.EmitError("resume: " + herr.Error())
+				core.EmitError("resume: " + core.LogSafe(herr.Error()))
 			} else {
 				messages = append(messages, hist...)
 				st.Append(messages)
@@ -798,7 +798,7 @@ func Run(opts Options) int {
 		if input == "/fork" {
 			name, err := st.Fork(messages)
 			if err != nil {
-				core.EmitError("fork: " + err.Error())
+				core.EmitError("fork: " + core.LogSafe(err.Error()))
 				continue
 			}
 			core.EmitStatus(fmt.Sprintf("forked — now writing to %s; the original session is frozen (return to it with /resume)", core.LogSafe(name)))
@@ -1082,7 +1082,7 @@ func handleCopy(messages []Message) {
 	cmd := exec.Command("clip.exe")
 	cmd.Stdin = strings.NewReader(last)
 	if err := cmd.Run(); err != nil {
-		core.EmitError("copy failed (clip.exe unavailable?): " + err.Error())
+		core.EmitError("copy failed (clip.exe unavailable?): " + core.LogSafe(err.Error()))
 		return
 	}
 	core.EmitStatus(fmt.Sprintf("copied last reply to the Windows clipboard (%d chars)", len(last)))
@@ -1107,13 +1107,13 @@ func handleReload(baseURL, model, root string) {
 	}
 	goBin, err := exec.LookPath("go")
 	if err != nil {
-		core.EmitError("reload: " + err.Error())
+		core.EmitError("reload: " + core.LogSafe(err.Error()))
 		return
 	}
 	args := []string{"go", "run", ".", "-url", baseURL, "-model", model, "-resume", "latest", root}
 	core.EmitStatus("reloading — resuming this session in the new build…")
 	if err := execReplace(goBin, args, os.Environ()); err != nil {
-		core.EmitError("reload: exec failed: " + err.Error())
+		core.EmitError("reload: exec failed: " + core.LogSafe(err.Error()))
 	}
 }
 
@@ -1173,7 +1173,7 @@ func listServerModels(baseURL, current string) {
 	// Not LM Studio (or native API disabled): plain list, no state info.
 	models, err := listModels(baseURL)
 	if err != nil {
-		core.EmitError("models: " + err.Error())
+		core.EmitError("models: " + core.LogSafe(err.Error()))
 		return
 	}
 	for _, m := range models {
@@ -1193,7 +1193,7 @@ func handleDiff(sb *Sandbox, arg string) {
 	if arg != "" {
 		p, err := sb.resolve(arg)
 		if err != nil {
-			core.EmitError("diff: " + err.Error())
+			core.EmitError("diff: " + core.LogSafe(err.Error()))
 			return
 		}
 		paths[p] = true
@@ -1257,7 +1257,7 @@ func handleUndo(sb *Sandbox, arg string) {
 	}
 	path, err := sb.resolve(arg)
 	if err != nil {
-		core.EmitError("undo: " + err.Error())
+		core.EmitError("undo: " + core.LogSafe(err.Error()))
 		return
 	}
 	bak, err := os.ReadFile(path + ".bak")
@@ -1266,7 +1266,7 @@ func handleUndo(sb *Sandbox, arg string) {
 		return
 	}
 	if err := writeAtomic(path, bak); err != nil {
-		core.EmitError("undo: " + err.Error())
+		core.EmitError("undo: " + core.LogSafe(err.Error()))
 		return
 	}
 	core.EmitStatus(fmt.Sprintf("restored %s from %s.bak (%d bytes)", core.LogSafe(path), core.LogSafe(path), len(bak)))
