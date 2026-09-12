@@ -48,7 +48,7 @@ func (s *stdoutSubscriber) println(line string) {
 	s.mu.Lock()
 	s.eraseOverwriteLocked()
 	s.mu.Unlock()
-	fmt.Println(line)
+	fmt.Println(core.LogSafe(line))
 }
 
 func (s *stdoutSubscriber) OnEvent(e Event) {
