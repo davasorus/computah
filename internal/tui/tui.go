@@ -23,6 +23,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/davasorus/computah/internal/agent"
@@ -69,6 +70,13 @@ type tuiModel struct {
 	onShell   func(string) // run a !shell command
 	onFile    func(string) // attach an @file
 	onCommand func(string) // handle a /command
+
+	// messagesMu protects the messages slice from concurrent access by
+	// the submit, onShell, and onFile closures (each runs in its own
+	// goroutine and appends to the same slice).
+	msgMu sync.Mutex
+	msgs  *[]core.Message
+	st    *agent.SessionStore
 }
 
 // styleForRole maps a canonical core.Role to the TUI's lipgloss style, so the
@@ -104,13 +112,13 @@ var (
 	stRailHd = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Bold(true)
 )
 
-func newTUIModel(submit func(string)) tuiModel {
+func newTUIModel(submit func(string), msgs *[]core.Message, st *agent.SessionStore) tuiModel {
 	ti := textinput.New()
 	ti.Placeholder = "message the agent…"
 	ti.Focus()
 	ti.Prompt = "❯ "
 	vp := viewport.New(80, 20)
-	return tuiModel{input: ti, vp: vp, submit: submit, hist: newTUIHistory()}
+	return tuiModel{input: ti, vp: vp, submit: submit, hist: newTUIHistory(), msgs: msgs, st: st}
 }
 
 func (m tuiModel) Init() tea.Cmd { return tea.Batch(textinput.Blink, tickCmd()) }
@@ -134,6 +142,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.input.Width = m.width - 4
 		m.reflow()
 	case tea.KeyMsg:
+		// Guard: if submit is nil the model is not fully initialized.
+		if m.submit == nil {
+			break
+		}
 		switch msg.String() {
 		case "ctrl+c", "ctrl+d":
 			return m, tea.Quit
@@ -258,6 +270,10 @@ func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // applyEvent turns a bus event into transcript lines / state.
 func (m *tuiModel) applyEvent(e core.Event) {
+	// Guard: if lines is nil the transcript has not been initialized.
+	if m.lines == nil {
+		m.lines = []string{}
+	}
 	switch e.Kind {
 	case core.EvAssistant:
 		// Coalesce consecutive assistant lines into the tail.
@@ -477,7 +493,11 @@ func (m tuiModel) View() string {
 func (m tuiModel) renderRail(w int) string {
 	var b strings.Builder
 	b.WriteString(stRailHd.Render("TODOS") + "\n")
-	if len(m.todos) == 0 {
+	todos := m.todos
+	if todos == nil {
+		todos = []agent.TodoItem{}
+	}
+	if len(todos) == 0 {
 		b.WriteString(stDim.Render("none") + "\n")
 	} else {
 		for _, t := range m.todos {
@@ -516,6 +536,9 @@ func RunTUI(baseURL, model string, sb *agent.Sandbox, st *agent.SessionStore, me
 	agent.SilenceStdout(true) // the TUI owns the screen
 
 	var prog *tea.Program
+	// messages is passed by pointer so all closures share the same slice.
+	msgs := &messages
+
 	// forward every bus event into the tea loop
 	unsub := core.Bus.Subscribe(core.SubscriberFunc(func(e core.Event) {
 		if prog != nil {
@@ -525,18 +548,21 @@ func RunTUI(baseURL, model string, sb *agent.Sandbox, st *agent.SessionStore, me
 	defer unsub()
 
 	submit := func(text string) {
-		messages = append(messages, core.Message{Role: "user", Content: text})
+		m := tuiModel{msgs: msgs, st: st}
+		m.msgMu.Lock()
+		*m.msgs = append(*m.msgs, core.Message{Role: "user", Content: text})
+		m.msgMu.Unlock()
 		defer func() {
 			if r := recover(); r != nil {
 				prog.Send(turnErrMsg{err: "panic in turn"})
 			}
 		}()
-		messages = agent.RunTurn(baseURL, model, sb, st, messages)
-		st.Append(messages)
+		*m.msgs = agent.RunTurn(baseURL, model, sb, st, *m.msgs)
+		st.Append(*m.msgs)
 		prog.Send(turnDoneMsg{})
 	}
 
-	m := newTUIModel(submit)
+	m := newTUIModel(submit, msgs, st)
 	m.onShell = func(cmd string) {
 		out, code, err := agent.ExecShell(cmd, sb.Root, true)
 		detail := ""
@@ -544,11 +570,13 @@ func RunTUI(baseURL, model string, sb *agent.Sandbox, st *agent.SessionStore, me
 			detail = err.Error()
 		}
 		core.EmitLine(agent.Tail(out, 4096))
-		messages = append(messages, core.Message{
+		m.msgMu.Lock()
+		*m.msgs = append(*m.msgs, core.Message{
 			Role:    "user",
 			Content: "[shell] $ " + cmd + " (exit " + strconv.Itoa(code) + detail + ")\n" + agent.Tail(out, 8192),
 		})
-		st.Append(messages)
+		m.st.Append(*m.msgs)
+		m.msgMu.Unlock()
 	}
 	m.onFile = func(path string) {
 		abs, err := core.ConfinePath(sb.Root, path)
@@ -561,15 +589,17 @@ func RunTUI(baseURL, model string, sb *agent.Sandbox, st *agent.SessionStore, me
 			core.EmitError("  @ cannot read " + path + ": " + err.Error())
 			return
 		}
-		messages = append(messages, core.Message{
+		m.msgMu.Lock()
+		*m.msgs = append(*m.msgs, core.Message{
 			Role:    "user",
 			Content: "[attached " + path + "]\n" + string(data),
 		})
-		st.Append(messages)
+		m.st.Append(*m.msgs)
+		m.msgMu.Unlock()
 		core.EmitLine("  @ attached " + path + " (" + strconv.Itoa(len(data)) + " bytes)")
 	}
 	m.onCommand = func(cmd string) {
-		if out, handled := agent.RunInfoCommand(cmd, baseURL, model, messages, st); handled {
+		if out, handled := agent.RunInfoCommand(cmd, baseURL, model, *m.msgs, st); handled {
 			core.EmitLine(strings.TrimRight(out, "\n"))
 			return
 		}

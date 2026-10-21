@@ -24,7 +24,7 @@ const dashHTML = `<!doctype html>
     --mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; }
+  html, body { margin: 0; height: 100%%; }
   body {
     background: var(--bg); color: var(--ink); font-family: var(--mono);
     font-size: 13px; line-height: 1.5; display: grid;
@@ -50,11 +50,11 @@ const dashHTML = `<!doctype html>
   .brand { font-weight: 600; letter-spacing: 0.5px; color: var(--ink); }
   .brand b { color: var(--cyan); }
   .live { display: inline-flex; align-items: center; gap: 6px; color: var(--dim); font-size: 11px; }
-  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--dim); }
+  .dot { width: 7px; height: 7px; border-radius: 50%%; background: var(--dim); }
   .dot.on { background: var(--green); box-shadow: 0 0 6px var(--green); }
   .working { display: inline-flex; align-items: center; gap: 7px; color: var(--dim); font-size: 12px; }
   .working.on { color: var(--amber); }
-  .spin { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--amber); display: none; }
+  .spin { width: 10px; height: 10px; border-radius: 50%%; border: 2px solid var(--line); border-top-color: var(--amber); display: none; }
   .working.on .spin { display: inline-block; animation: spin 0.7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .stats { display: flex; gap: 20px; margin-left: auto; flex-wrap: wrap; }
@@ -168,10 +168,16 @@ const dashHTML = `<!doctype html>
   </main>
   <form id="composer" style="display:none">
     <input id="prompt" type="text" placeholder="send a prompt to the agent…" autocomplete="off">
+    <input type="hidden" id="csrf" name="csrf_token">
     <button type="submit">send</button>
   </form>
-<script>
-(function () {
+  <script>
+  // CSRF token: the server generates a per-process secret and embeds it here.
+  // The browser echoes it on POST; the server verifies it matches. This prevents
+  // cross-site request forgery — a malicious page on another origin cannot
+  // read the token (XSS-protected) nor forge a valid POST without it.
+    var csrfToken = '%s';
+  (function () {
   var feed = document.getElementById('feed');
   var dot = document.getElementById('dot'), conn = document.getElementById('conn');
   var working = document.getElementById('working'), worktext = document.getElementById('worktext');
@@ -260,7 +266,7 @@ const dashHTML = `<!doctype html>
         function answer(decision) {
           box.querySelectorAll('button').forEach(function (b) { b.disabled = true; });
           fetch('/api/approve', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
             body: JSON.stringify({ id: id, decision: decision })
           }).then(function () {
             box.querySelector('.apr-q').textContent = 'approve: ' + (ev.text || '') + '  → ' + decision;
@@ -515,6 +521,7 @@ const dashHTML = `<!doctype html>
   // Two-way: composer submits prompts when the server allows writes.
   var composer = document.getElementById('composer');
   var promptInput = document.getElementById('prompt');
+  var csrfInput = document.getElementById('csrf');
   function updateComposer(canSubmit) {
     composer.style.display = canSubmit ? 'flex' : 'none';
   }
@@ -526,7 +533,7 @@ const dashHTML = `<!doctype html>
     btn.disabled = true;
     fetch('/api/submit', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken },
       body: JSON.stringify({ text: text })
     }).then(function (r) {
       if (r.ok) { promptInput.value = ''; }

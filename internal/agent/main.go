@@ -436,6 +436,8 @@ type Options struct {
 	RunTUI         func(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Message)
 	RunHeadless    func(baseURL, model string, sb *Sandbox, st *SessionStore, messages []Message)
 	SetDashWrite   func(bool)
+	SetDashToken   func(string)
+	DashToken      string // -dash-token value
 }
 
 // Run is the agent entry point. It preserves the exact behavior of the former
@@ -466,6 +468,9 @@ func Run(opts Options) int {
 			// dashboard — the TUI drains browser submissions, so a read-only
 			// browser would be a dead end in that combined mode.
 			opts.SetDashWrite(*serveWriteFlag || *headlessFlag || opts.Tui)
+		}
+		if opts.SetDashToken != nil {
+			opts.SetDashToken(opts.DashToken)
 		}
 		// Only headless has NO terminal, so only headless must route
 		// approvals to the browser. In -serve-write REPL/TUI the user is at

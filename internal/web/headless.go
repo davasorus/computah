@@ -37,13 +37,15 @@ func RunHeadless(baseURL, model string, sb *agent.Sandbox, st *agent.SessionStor
 	core.EmitStatus("headless: no terminal UI — drive from the dashboard at the served address")
 	fmt.Println("headless mode: open the dashboard to interact. Ctrl+C to quit.")
 
-	// Clean shutdown on SIGINT/SIGTERM.
+	// Graceful shutdown on SIGINT/SIGTERM.
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-sig
-		core.EmitStatus("headless: shutting down")
-		// best-effort session flush already happens per-turn
+		core.EmitStatus("headless: shutting down — flushing session…")
+		st.Append(messages)
+		core.EmitStatus("session saved: " + st.Path())
+		close(core.BrowserSubmissions)
 		os.Exit(0)
 	}()
 

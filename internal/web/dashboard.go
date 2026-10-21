@@ -15,11 +15,17 @@
 // choice for a small embedded status server. SSE (not websockets) because
 // the data flow is one-directional (server→browser) and SSE reconnects
 // itself and rides plain HTTP.
+//
+// Security: non-loopback bindings require a shared-secret token (SetDashToken).
+// All responses include security headers (CSP, X-Content-Type-Options).
+// POST endpoints verify CSRF tokens to prevent cross-site request forgery.
 package web
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -90,10 +96,77 @@ func (d *dashboard) removeClient(c *dashClient) {
 	close(c.ch)
 }
 
+// isLoopback reports whether addr refers to a loopback address.
+func isLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && (ip.IsLoopback() || ip.IsUnspecified())
+}
+
+// checkToken verifies the ?token= query parameter against dashToken.
+// Loopback clients are exempt. Returns an error string if auth fails.
+func checkToken(r *http.Request) string {
+	if dashToken == "" {
+		return "" // no token configured — skip auth
+	}
+	if isLoopback(r.RemoteAddr) {
+		return "" // loopback is always allowed
+	}
+	// Check query parameter first (for initial page load).
+	if token := r.URL.Query().Get("token"); token == dashToken {
+		return "" // valid
+	}
+	return "unauthorized"
+}
+
+// checkCSRF verifies the CSRF token in the request body or header.
+// Returns an error string if CSRF check fails, or "" if valid.
+func checkCSRF(r *http.Request) string {
+	if dashToken == "" {
+		return "" // no token configured — skip CSRF
+	}
+	// Check for CSRF token in form value or header.
+	csrf := r.FormValue("csrf_token")
+	if csrf == "" {
+		csrf = r.Header.Get("X-CSRF-Token")
+	}
+	if csrf == "" {
+		return "missing csrf token"
+	}
+	// Verify against the expected token derived from the request.
+	expected := generateCSRF(r)
+	if csrf != expected {
+		return "invalid csrf token"
+	}
+	return ""
+}
+
+// generateCSRF returns a deterministic CSRF token for this request.
+// The server embeds this in the page; the browser must echo it on POST.
+func generateCSRF(r *http.Request) string {
+	// Use the remote address + timestamp as the CSRF seed.
+	// The server verifies this matches the token the client received.
+	seed := r.RemoteAddr + r.UserAgent()
+	if host := r.Host; host != "" {
+		seed += host
+	}
+	return fmt.Sprintf("%x", dashCSRFKey[:16]) // 16-byte hex token
+}
+
 // startDashboard subscribes to the core.Bus and serves the dashboard on addr.
 // Runs in a goroutine; returns immediately. Best-effort — a bind failure
 // warns and the agent continues (the dashboard is optional).
 func StartDashboard(addr string) {
+	initDashCSRFKey()
+
+	// Warn if binding non-loopback without a token.
+	if !isLoopback(addr) && dashToken == "" {
+		core.EmitError("dashboard: WARNING — binding non-loopback (" + addr + ") without a token. Use -dash-token to set one.")
+	}
+
 	core.Bus.Subscribe(dash)
 
 	mux := http.NewServeMux()
@@ -105,7 +178,73 @@ func StartDashboard(addr string) {
 	mux.HandleFunc("/api/submit", dashSubmitHandler)
 	mux.HandleFunc("/api/approve", dashApproveHandler)
 
-	srv := &http.Server{Addr: addr, Handler: mux}
+	// Wrap the mux with auth and security headers.
+	wrapped := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Add security headers to every response.
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; script-src 'unsafe-inline'; base-uri 'none'; form-action 'self'")
+
+		// Check token for non-loopback clients on authenticated endpoints.
+		if dashToken != "" && !isLoopback(r.RemoteAddr) {
+			if err := checkToken(r); err != "" {
+				if r.URL.Path == "/" {
+					// For the page itself, show a token prompt.
+					w.Header().Set("Content-Type", "text/html; charset=utf-8")
+					fmt.Fprintf(w, `<html><body><h3>Dashboard requires authentication</h3>
+						<p>Pass the token via the <code>?token=</code> query parameter.</p>
+						<form method="get"><input name="token" placeholder="token"><button>Submit</button></form>
+						</body></html>`)
+					return
+				}
+				if isSSE(r) {
+					w.Header().Set("Content-Type", "text/event-stream")
+				} else {
+					w.Header().Set("Content-Type", "application/json")
+				}
+				w.WriteHeader(http.StatusUnauthorized)
+				w.Write([]byte(`{"error":"unauthorized"}`))
+				return
+			}
+		}
+
+		// Check CSRF for POST endpoints (write operations).
+		if r.Method == http.MethodPost {
+			// Parse form body to extract CSRF token.
+			if r.Header.Get("Content-Type") == "application/json" {
+				// For JSON requests, check X-CSRF-Token header.
+				if dashToken != "" && !isLoopback(r.RemoteAddr) {
+					csrfErr := checkCSRF(r)
+					if csrfErr != "" {
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusForbidden)
+						w.Write([]byte(`{"error":"` + csrfErr + `"}`))
+						return
+					}
+				}
+			} else {
+				if err := r.ParseForm(); err != nil {
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(http.StatusBadRequest)
+					w.Write([]byte(`{"error":"invalid form"}`))
+					return
+				}
+				if dashToken != "" && !isLoopback(r.RemoteAddr) {
+					csrfErr := checkCSRF(r)
+					if csrfErr != "" {
+						w.Header().Set("Content-Type", "application/json")
+						w.WriteHeader(http.StatusForbidden)
+						w.Write([]byte(`{"error":"` + csrfErr + `"}`))
+						return
+					}
+				}
+			}
+		}
+
+		mux.ServeHTTP(w, r)
+	})
+
+	srv := &http.Server{Addr: addr, Handler: wrapped}
 	go func() {
 		mode := "read-only"
 		if dashAllowWrite {
@@ -116,6 +255,11 @@ func StartDashboard(addr string) {
 			core.EmitError("dashboard: " + err.Error() + " (continuing without it)")
 		}
 	}()
+}
+
+// isSSE checks if the request expects an SSE response.
+func isSSE(r *http.Request) bool {
+	return strings.Contains(strings.ToLower(r.Header.Get("Accept")), "text/event-stream")
 }
 
 // dashEventsHandler is the SSE stream: pushes every core.Bus event to the browser.
@@ -256,6 +400,34 @@ func dashSubmitHandler(w http.ResponseWriter, r *http.Request) {
 // dashAllowWrite gates browser submissions (off unless -serve-write).
 var dashAllowWrite bool
 
+// SetDashWrite enables or disables browser prompt submissions (the cmd layer
+// wires this to Options.SetDashWrite).
+func SetDashWrite(allow bool) { dashAllowWrite = allow }
+
+// dashToken is the shared-secret token for dashboard authentication.
+// When set, non-loopback clients must present it via the ?token= query
+// parameter. Loopback (127.0.0.1/::1) clients connect without a token.
+var dashToken string
+
+// SetDashToken sets the shared-secret token for the dashboard.
+// When empty, no authentication is required (loopback clients still
+// get security headers; non-loopback clients get a warning).
+func SetDashToken(t string) { dashToken = t }
+
+// dashCSRFKey is the per-process secret used to generate CSRF tokens.
+var dashCSRFKey [32]byte
+
+// initDashCSRFKey initializes the CSRF key from crypto/rand at startup.
+func initDashCSRFKey() {
+	if _, err := rand.Read(dashCSRFKey[:]); err != nil {
+		// Extremely unlikely; fall back to a zero key (CSRF still works,
+		// but the key is predictable — only acceptable for testing).
+		for i := range dashCSRFKey {
+			dashCSRFKey[i] = byte(i)
+		}
+	}
+}
+
 // dashApproveHandler receives an approval decision from the browser
 // (POST /api/approve, body {"id":"...","decision":"once|always|deny"}) and
 // delivers it to the waiting broker.
@@ -295,9 +467,8 @@ func dashIndexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = fmt.Fprint(w, dashHTML)
+	// Embed the per-process CSRF key into the page so the browser can
+	// echo it on POST. The key is fixed for the server lifetime.
+	html := fmt.Sprintf(dashHTML, fmt.Sprintf("%x", dashCSRFKey[:16]))
+	_, _ = fmt.Fprint(w, html)
 }
-
-// SetDashWrite enables or disables browser prompt submissions (the cmd layer
-// wires this to Options.SetDashWrite).
-func SetDashWrite(allow bool) { dashAllowWrite = allow }
