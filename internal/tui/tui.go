@@ -112,18 +112,18 @@ var (
 	stRailHd = lipgloss.NewStyle().Foreground(lipgloss.Color("8")).Bold(true)
 )
 
-func newTUIModel(submit func(string), msgs *[]core.Message, st *agent.SessionStore) tuiModel {
+func newTUIModel(submit func(string), msgs *[]core.Message, st *agent.SessionStore) *tuiModel {
 	ti := textinput.New()
 	ti.Placeholder = "message the agent…"
 	ti.Focus()
 	ti.Prompt = "❯ "
 	vp := viewport.New(80, 20)
-	return tuiModel{input: ti, vp: vp, submit: submit, hist: newTUIHistory(), msgs: msgs, st: st}
+	return &tuiModel{input: ti, vp: vp, submit: submit, hist: newTUIHistory(), msgs: msgs, st: st}
 }
 
-func (m tuiModel) Init() tea.Cmd { return tea.Batch(textinput.Blink, tickCmd()) }
+func (m *tuiModel) Init() tea.Cmd { return tea.Batch(textinput.Blink, tickCmd()) }
 
-func (m tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (m *tuiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmds []tea.Cmd
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -458,7 +458,7 @@ func wrapLine(line string, w int) string {
 	return md.WrapANSI(line, w) // shared wrapper (indent-preserving, ANSI-aware)
 }
 
-func (m tuiModel) View() string {
+func (m *tuiModel) View() string {
 	if m.width == 0 {
 		return "starting…"
 	}
@@ -490,7 +490,7 @@ func (m tuiModel) View() string {
 	return lipgloss.JoinVertical(lipgloss.Left, bar, body, in, status)
 }
 
-func (m tuiModel) renderRail(w int) string {
+func (m *tuiModel) renderRail(w int) string {
 	var b strings.Builder
 	b.WriteString(stRailHd.Render("TODOS") + "\n")
 	todos := m.todos
@@ -548,7 +548,7 @@ func RunTUI(baseURL, model string, sb *agent.Sandbox, st *agent.SessionStore, me
 	defer unsub()
 
 	submit := func(text string) {
-		m := tuiModel{msgs: msgs, st: st}
+		m := &tuiModel{msgs: msgs, st: st}
 		m.msgMu.Lock()
 		*m.msgs = append(*m.msgs, core.Message{Role: "user", Content: text})
 		m.msgMu.Unlock()

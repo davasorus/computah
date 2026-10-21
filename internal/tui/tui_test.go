@@ -99,7 +99,7 @@ func TestTUIEnterSubmitsAndDisablesInput(t *testing.T) {
 	m.input.SetValue("do the thing")
 	// Simulate Enter.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	nm := updated.(tuiModel)
+	nm := updated.(*tuiModel)
 	if !nm.busy {
 		t.Fatal("model should be busy after submit")
 	}
@@ -206,7 +206,7 @@ func TestTUIBrowserPromptStartsTurn(t *testing.T) {
 	m := newTUIModel(func(s string) { submitted <- s }, nil, nil)
 	m.width, m.height = 100, 30
 	updated, _ := m.Update(browserPromptMsg{text: "prompt from browser"})
-	nm := updated.(tuiModel)
+	nm := updated.(*tuiModel)
 	if !nm.busy {
 		t.Fatal("browser prompt should start a turn (busy=true)")
 	}
@@ -222,7 +222,7 @@ func TestTUIBrowserPromptStartsTurn(t *testing.T) {
 	}
 	// A browser prompt while busy is ignored (no crash, no double-run).
 	updated2, _ := nm.Update(browserPromptMsg{text: "second while busy"})
-	nm2 := updated2.(tuiModel)
+	nm2 := updated2.(*tuiModel)
 	if !nm2.busy {
 		t.Fatal("should still be busy")
 	}
