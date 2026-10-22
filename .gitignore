@@ -11,8 +11,8 @@
 /.vscode/
 .DS_Store
 
-# local logs
-*.log
+# harness-generated backups
+/*.bak
 
 
 */*/*.go.bak
