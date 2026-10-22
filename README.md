@@ -212,5 +212,5 @@ dependency graph stays acyclic.
 
 ## Requirements
 
-- Go 1.25+
+- Go 1.26+
 - A local OpenAI-compatible server (LM Studio, etc.) reachable at `--url`
