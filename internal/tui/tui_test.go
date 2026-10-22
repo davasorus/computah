@@ -12,7 +12,7 @@ import (
 )
 
 func TestTUIApplyEventBuildsTranscript(t *testing.T) {
-	m := newTUIModel(func(string) {})
+	m := newTUIModel(func(string) {}, nil, nil)
 	m.applyEvent(core.Event{Kind: core.EvUser, Text: "hi"}) // user events aren't added by applyEvent (added on submit)
 	m.applyEvent(core.Event{Kind: core.EvToolCall, Tool: "read_file", Text: `{"path":"x"}`})
 	m.applyEvent(core.Event{Kind: core.EvAssistant, Text: "line one"})
@@ -42,7 +42,7 @@ func TestTUIApplyEventBuildsTranscript(t *testing.T) {
 // transcript line on repeat keys (no scrolling duplicates) and Meta["clear"]
 // removes it entirely.
 func TestTUIOverwriteReplacesInPlace(t *testing.T) {
-	m := newTUIModel(func(string) {})
+	m := newTUIModel(func(string) {}, nil, nil)
 	m.applyEvent(core.Event{Kind: core.EvLine, Text: "before"})
 	m.applyEvent(core.Event{Kind: core.EvOverwrite, Key: "spinner", Text: "thinking…"})
 	m.applyEvent(core.Event{Kind: core.EvOverwrite, Key: "spinner", Text: "thinking harder…"})
@@ -85,7 +85,7 @@ func TestTUIOverwriteReplacesInPlace(t *testing.T) {
 }
 
 func TestTUIThinkingUpdatesIndicator(t *testing.T) {
-	m := newTUIModel(func(string) {})
+	m := newTUIModel(func(string) {}, nil, nil)
 	m.applyEvent(core.Event{Kind: core.EvThinking, Text: "thinking (~500 tokens)"})
 	if m.thinking != "thinking (~500 tokens)" {
 		t.Fatalf("thinking indicator not set: %q", m.thinking)
@@ -94,12 +94,12 @@ func TestTUIThinkingUpdatesIndicator(t *testing.T) {
 
 func TestTUIEnterSubmitsAndDisablesInput(t *testing.T) {
 	submitted := make(chan string, 1)
-	m := newTUIModel(func(s string) { submitted <- s })
+	m := newTUIModel(func(s string) { submitted <- s }, nil, nil)
 	m.width, m.height = 100, 30 // so Update doesn't divide by zero on sizes
 	m.input.SetValue("do the thing")
 	// Simulate Enter.
 	updated, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	nm := updated.(tuiModel)
+	nm := updated.(*tuiModel)
 	if !nm.busy {
 		t.Fatal("model should be busy after submit")
 	}
@@ -119,7 +119,7 @@ func TestTUIEnterSubmitsAndDisablesInput(t *testing.T) {
 }
 
 func TestTUIQuitKeys(t *testing.T) {
-	m := newTUIModel(func(string) {})
+	m := newTUIModel(func(string) {}, nil, nil)
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if cmd == nil {
 		t.Fatal("ctrl+c should return a quit command")
@@ -203,10 +203,10 @@ func TestMultilineToggle(t *testing.T) {
 
 func TestTUIBrowserPromptStartsTurn(t *testing.T) {
 	submitted := make(chan string, 2)
-	m := newTUIModel(func(s string) { submitted <- s })
+	m := newTUIModel(func(s string) { submitted <- s }, nil, nil)
 	m.width, m.height = 100, 30
 	updated, _ := m.Update(browserPromptMsg{text: "prompt from browser"})
-	nm := updated.(tuiModel)
+	nm := updated.(*tuiModel)
 	if !nm.busy {
 		t.Fatal("browser prompt should start a turn (busy=true)")
 	}
@@ -222,7 +222,7 @@ func TestTUIBrowserPromptStartsTurn(t *testing.T) {
 	}
 	// A browser prompt while busy is ignored (no crash, no double-run).
 	updated2, _ := nm.Update(browserPromptMsg{text: "second while busy"})
-	nm2 := updated2.(tuiModel)
+	nm2 := updated2.(*tuiModel)
 	if !nm2.busy {
 		t.Fatal("should still be busy")
 	}

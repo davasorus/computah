@@ -181,11 +181,14 @@ type wordTok struct {
 
 // splitWordsANSI breaks s into words and spaces, attaching any ANSI escape
 // sequences to the token that follows them so styling survives wrapping.
+// Handles all CSI sequences (ESC [ ... command byte 0x40–0x7E), not just
+// SGR (ESC [ ... m). The ESC [ introducer is skipped; the sequence ends at
+// the command byte (0x40–0x7E) that is NOT '['.
 func splitWordsANSI(s string) []wordTok {
 	var toks []wordTok
 	var ansi strings.Builder
 	var cur strings.Builder
-	inEsc := false
+	inEsc, gotCSI := false, false
 	flush := func() {
 		if cur.Len() > 0 || ansi.Len() > 0 {
 			toks = append(toks, wordTok{ansi: ansi.String(), text: cur.String()})
@@ -198,12 +201,23 @@ func splitWordsANSI(s string) []wordTok {
 		r := runes[i]
 		if r == '\033' {
 			inEsc = true
+			gotCSI = false
 			ansi.WriteRune(r)
 			continue
 		}
 		if inEsc {
 			ansi.WriteRune(r)
-			if r == 'm' {
+			// CSI starts at '['. Skip parameter bytes (0x30–0x3F) and
+			// intermediate bytes until we hit the final command byte
+			// (0x40–0x7E) which is NOT '['.
+			if !gotCSI {
+				if r == '[' {
+					gotCSI = true
+				}
+				continue
+			}
+			// CSI sequence ends at command byte (0x40–0x7E).
+			if r >= 0x40 && r <= 0x7E {
 				inEsc = false
 			}
 			continue
@@ -220,15 +234,29 @@ func splitWordsANSI(s string) []wordTok {
 }
 
 // visibleLen counts runes that aren't part of an ANSI escape sequence.
+// Handles all CSI sequences (ESC [ ... command byte 0x40–0x7E), not just
+// SGR (ESC [ ... m), so malformed or cursor-control codes don't break width
+// calculation. The ESC [ introducer itself is skipped; the sequence ends at
+// the command byte (0x40–0x7E) that is NOT '['.
 func visibleLen(s string) int {
-	n, inEsc := 0, false
+	n, inEsc, gotCSI := 0, false, false
 	for _, r := range s {
 		if r == '\033' {
 			inEsc = true
+			gotCSI = false
 			continue
 		}
 		if inEsc {
-			if r == 'm' {
+			// CSI starts at '['. Skip parameter bytes (0x30–0x3F) and
+			// intermediate bytes until we hit the final command byte
+			// (0x40–0x7E) which is NOT '['.
+			if !gotCSI {
+				if r == '[' {
+					gotCSI = true
+				}
+				continue
+			}
+			if r >= 0x40 && r <= 0x7E {
 				inEsc = false
 			}
 			continue

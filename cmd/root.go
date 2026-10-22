@@ -18,9 +18,10 @@ import (
 
 // persistent flags shared by all commands
 var (
-	flagURL   string
-	flagModel string
-	flagTUI   bool
+	flagURL       string
+	flagModel     string
+	flagTUI       bool
+	flagDashToken string
 )
 
 var rootCmd = &cobra.Command{
@@ -70,8 +71,11 @@ func init() {
 		"model id (default: first chat model on the server / config)")
 	rootCmd.PersistentFlags().BoolVar(&flagTUI, "tui", false,
 		"run the full-screen TUI as the terminal interface (composes with any command)")
+	rootCmd.PersistentFlags().StringVar(&flagDashToken, "dash-token", "",
+		"shared-secret token for the web dashboard (required for non-loopback binding)")
 	_ = viper.BindPFlag("url", rootCmd.PersistentFlags().Lookup("url"))
 	_ = viper.BindPFlag("model", rootCmd.PersistentFlags().Lookup("model"))
+	_ = viper.BindPFlag("dash-token", rootCmd.PersistentFlags().Lookup("dash-token"))
 
 	rootCmd.AddCommand(runCmd, execCmd, evalCmd, dashboardCmd, versionCmd, configCmd)
 }
@@ -110,6 +114,7 @@ func baseOptions() agent.Options {
 		StartDashboard: web.StartDashboard,
 		RunHeadless:    web.RunHeadless,
 		SetDashWrite:   web.SetDashWrite,
+		SetDashToken:   web.SetDashToken,
 		RunTUI:         tui.RunTUI,
 	}
 }
