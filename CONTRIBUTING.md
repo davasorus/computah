@@ -4,7 +4,7 @@ computah is a personal self-hosted AI coding agent, but issues and PRs are welco
 
 ## Development
 
-Requires Go 1.25+.
+Requires Go 1.26+.
 
 ```bash
 git clone https://github.com/davasorus/computah
