@@ -147,12 +147,8 @@ func checkCSRF(r *http.Request) string {
 // generateCSRF returns a deterministic CSRF token for this request.
 // The server embeds this in the page; the browser must echo it on POST.
 func generateCSRF(r *http.Request) string {
-	// Use the remote address + timestamp as the CSRF seed.
-	// The server verifies this matches the token the client received.
-	seed := r.RemoteAddr + r.UserAgent()
-	if host := r.Host; host != "" {
-		seed += host
-	}
+	// Return the per-process CSRF key as a hex token.
+	// The server embeds this in the page; the browser must echo it on POST.
 	return fmt.Sprintf("%x", dashCSRFKey[:16]) // 16-byte hex token
 }
 
@@ -191,7 +187,7 @@ func StartDashboard(addr string) {
 				if r.URL.Path == "/" {
 					// For the page itself, show a token prompt.
 					w.Header().Set("Content-Type", "text/html; charset=utf-8")
-					fmt.Fprintf(w, `<html><body><h3>Dashboard requires authentication</h3>
+					_, _ = fmt.Fprint(w, `<html><body><h3>Dashboard requires authentication</h3>
 						<p>Pass the token via the <code>?token=</code> query parameter.</p>
 						<form method="get"><input name="token" placeholder="token"><button>Submit</button></form>
 						</body></html>`)
@@ -203,7 +199,7 @@ func StartDashboard(addr string) {
 					w.Header().Set("Content-Type", "application/json")
 				}
 				w.WriteHeader(http.StatusUnauthorized)
-				w.Write([]byte(`{"error":"unauthorized"}`))
+				_, _ = w.Write([]byte(`{"error":"unauthorized"}`))
 				return
 			}
 		}
@@ -218,7 +214,7 @@ func StartDashboard(addr string) {
 					if csrfErr != "" {
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusForbidden)
-						w.Write([]byte(`{"error":"` + csrfErr + `"}`))
+						_, _ = w.Write([]byte(`{"error":"` + csrfErr + `"}`))
 						return
 					}
 				}
@@ -226,7 +222,7 @@ func StartDashboard(addr string) {
 				if err := r.ParseForm(); err != nil {
 					w.Header().Set("Content-Type", "application/json")
 					w.WriteHeader(http.StatusBadRequest)
-					w.Write([]byte(`{"error":"invalid form"}`))
+					_, _ = w.Write([]byte(`{"error":"invalid form"}`))
 					return
 				}
 				if dashToken != "" && !isLoopback(r.RemoteAddr) {
@@ -234,7 +230,7 @@ func StartDashboard(addr string) {
 					if csrfErr != "" {
 						w.Header().Set("Content-Type", "application/json")
 						w.WriteHeader(http.StatusForbidden)
-						w.Write([]byte(`{"error":"` + csrfErr + `"}`))
+						_, _ = w.Write([]byte(`{"error":"` + csrfErr + `"}`))
 						return
 					}
 				}
